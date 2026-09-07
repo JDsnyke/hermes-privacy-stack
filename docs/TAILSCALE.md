@@ -1,17 +1,18 @@
-# Tailscale / private multi-device networking
+# Tailscale / Headscale notes
 
-The stack does not need a public reverse proxy for personal multi-device memory. Prefer a private tailnet.
+> The stack is now provider-agnostic. Start with [PRIVATE-NETWORKING.md](PRIVATE-NETWORKING.md) for the current comparison of **NetBird, Headscale, Tailscale, Netmaker and plain WireGuard**.
+
+Tailscale remains an excellent convenience option, and Headscale provides a self-hosted Tailscale-compatible control plane for personal/small deployments.
 
 ## Server
 
-1. Install and sign into Tailscale on the always-on host.
-2. Get its IPv4 address:
+With Tailscale or a Headscale-managed Tailscale client, obtain the overlay IPv4 address:
 
 ```bash
 tailscale ip -4
 ```
 
-3. Install the stack in server mode, binding to that exact address:
+Then bind Hermes Privacy Stack to that exact address:
 
 ```bash
 ./install.sh --role server --bind-address 100.64.10.20
@@ -21,7 +22,7 @@ The installer rejects `0.0.0.0`, `::` and globally routable addresses.
 
 ## Clients
 
-Join each client device to the same tailnet and point it at the server:
+Join each client to the same overlay and point it at the server:
 
 ```bash
 ./install.sh \
@@ -30,9 +31,9 @@ Join each client device to the same tailnet and point it at the server:
   --searxng-url http://100.64.10.20:8088
 ```
 
-## ACL principle
+## ACL/policy principle
 
-A Tailscale IP is private routing, not automatically least privilege. Restrict service ports to only the devices/users that need them.
+A private overlay IP is private routing, not automatically least privilege. Restrict service ports to only the devices/users that need them.
 
 Typical personal exposure from the core stack:
 
@@ -48,12 +49,15 @@ Prefer denying `9999`, `5001` and `8090` to ordinary clients unless needed.
 
 ## Why direct private bind instead of `0.0.0.0`
 
-Binding Docker to the Tailscale/RFC1918 address prevents the service from automatically listening on every host interface. This reduces accidental LAN/Wi-Fi/public-interface exposure even before firewall rules are considered.
+Binding Docker to the exact overlay address prevents services from automatically listening on every host interface. This reduces accidental LAN/Wi-Fi/public-interface exposure even before network policy is considered.
 
-## Tailscale Serve
+## Tailscale vs Headscale
 
-Tailscale Serve can be a good future option for authenticated HTTPS names while services remain loopback-only. The current installer uses direct private-IP binds because they are simple and portable across Windows/macOS/Linux. A Serve-based mode is tracked in ROADMAP.md.
+- **Tailscale:** easiest operational path; managed coordination/control plane.
+- **Headscale:** self-hosted open-source implementation of the Tailscale control server, intentionally scoped primarily to a single personal/small-organization tailnet.
+
+Both use the Tailscale client command above, so Hermes Privacy Stack does not need to care which control plane is behind it.
 
 ## Do not expose unauthenticated services publicly
 
-Hindsight and SearXNG are intended to stay on localhost/private networks in this stack. OpenViking requires a real root key before network exposure and is therefore not automatically started by the installer yet.
+Hindsight and SearXNG are intended to stay on localhost/private overlays. OpenViking requires a real root key before network exposure and is therefore not automatically started by the installer yet.
