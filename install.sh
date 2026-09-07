@@ -23,4 +23,17 @@ for c in python3 python; do
   if command -v "$c" >/dev/null 2>&1; then PY="$c"; break; fi
 done
 [[ -n "$PY" ]] || { echo "Python 3.10+ is required." >&2; exit 1; }
-exec "$PY" "$ROOT/bootstrap.py" "$@"
+
+SKIP_GUIDED="${HPS_SKIP_GUIDED:-0}"
+for arg in "$@"; do
+  if [[ "$arg" == "--non-interactive" || "$arg" == "--self-test" ]]; then
+    SKIP_GUIDED=1
+  fi
+done
+
+"$PY" "$ROOT/bootstrap.py" "$@"
+
+if [[ "$SKIP_GUIDED" != "1" && -f "$ROOT/scripts/guided_setup.py" ]]; then
+  echo
+  "$PY" "$ROOT/scripts/guided_setup.py"
+fi
