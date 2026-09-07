@@ -112,7 +112,8 @@ Legend: `[x]` complete · `[-]` partial/in progress · `[ ]` planned.
 - [x] Add reviewed `private-personal`, `coder`, `researcher`, and `operator` SOUL bundles.
 - [x] Add safe `scripts/install_profiles.py` that never clones credentials/memory and preserves existing SOUL files by default.
 - [x] Add profile-bundle discovery/validation to cross-platform CI.
-- [ ] Interactive personality builder with preview/diff before writing.
+- [x] Add `scripts/build_personality.py` with behavioral-only prompts, unified diff preview, explicit apply, local backup and phantom-profile protection.
+- [x] Add deterministic personality generation validation to CI.
 - [ ] Per-profile Hindsight mission/retention policies.
 - [ ] Add optional profile-specific MCP/skill authority presets.
 
@@ -123,9 +124,10 @@ Legend: `[x]` complete · `[-]` partial/in progress · `[ ]` planned.
 - [x] Server binds directly to a selected private overlay IP rather than `0.0.0.0`.
 - [x] Provider-agnostic networking guide covering NetBird, Headscale, Tailscale, Netmaker and plain WireGuard.
 - [x] Add `scripts/private_network.py` auto-detection for NetBird and Tailscale/Headscale clients.
-- [-] Bootstrap still auto-detects Tailscale only; integrate the provider helper and deterministic `--network-provider` selection. See #5.
-- [ ] Add NetBird self-hosted deployment/policy guide and Headscale deployment/enrollment guide. See #5.
-- [ ] Add least-privilege policy examples for shared Hermes service ports. See #5.
+- [x] Bootstrap supports deterministic `--network-provider auto|netbird|tailscale|manual`; Headscale uses the Tailscale client path. See #5.
+- [x] Add NetBird self-hosted deployment/policy guide and Headscale deployment/enrollment guide. See #5.
+- [x] Add least-privilege policy examples for shared Hermes service ports. See #5.
+- [ ] Run actual two-node smoke tests over at least NetBird and Tailscale/Headscale paths. See #5.
 - [x] Hindsight logical bank export/import backup scripts using `hindsight-admin export-bank` / `import-bank`.
 - [x] Sanitized configuration backup separate from secret-bearing full Hermes backups.
 - [-] rclone crypt copy backend supported for preconfigured encrypted remotes; still needs guided remote setup/verification UX.
@@ -174,7 +176,7 @@ A release can be tagged 1.0 only when:
 - [ ] Backup export + encrypted cloud copy + isolated test restore succeeds end-to-end.
 - [ ] Every enabled MCP has documented trust level and effective tool surface.
 - [ ] Every bundled/community skill has source/license/review metadata.
-- [x] CI validates Python/shell/PowerShell syntax, configuration, privacy invariants, secret hygiene, profile bundles and site integrity.
+- [x] CI validates Python/shell/PowerShell syntax, configuration, privacy invariants, secret hygiene, profile bundles, deterministic personality output and site integrity.
 - [x] Documentation includes install, uninstall, upgrade, backup/restore, privacy, threat model, profiles and private networking.
 - [ ] Stable releases use pinned/tested service images and publish provenance/SBOM/security scan results. See #4.
 
