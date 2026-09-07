@@ -1,4 +1,5 @@
 name: Deploy privacy-safe site
+
 on:
   push:
     branches: [main]
@@ -6,15 +7,22 @@ on:
       - 'site/**'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
+
 permissions:
   contents: read
   pages: write
   id-token: write
+
 concurrency:
   group: pages
   cancel-in-progress: true
+
 jobs:
   deploy:
+    # Prevent noisy failures before Pages is intentionally enabled.
+    # Set repository variable HPS_ENABLE_PAGES=true for automatic deploys,
+    # or run this workflow manually once.
+    if: github.event_name == 'workflow_dispatch' || vars.HPS_ENABLE_PAGES == 'true'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -22,6 +30,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
+        with:
+          enablement: true
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
