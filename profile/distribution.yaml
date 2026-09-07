@@ -1,0 +1,15 @@
+name: hermes-private
+version: 0.1.0
+description: "Privacy-first Hermes profile: local tools, Hindsight memory, reviewed skills"
+hermes_requires: ">=0.12.0"
+author: "JDsnyke"
+license: "MIT"
+env_requires:
+  - name: HINDSIGHT_API_URL
+    description: "Private/local Hindsight endpoint"
+    required: false
+    default: "http://127.0.0.1:8888"
+  - name: SEARXNG_URL
+    description: "Private/local SearXNG endpoint"
+    required: false
+    default: "http://127.0.0.1:8088"
