@@ -66,13 +66,71 @@ Preview actions:
 python scripts/install_profiles.py all --dry-run
 ```
 
-Only replace an existing SOUL deliberately:
+Only replace an existing bundled SOUL deliberately:
 
 ```bash
 python scripts/install_profiles.py coder --force-soul
 ```
 
 Take a backup/export first if the existing profile matters.
+
+## Interactive personality builder
+
+`build_personality.py` creates a custom privacy-first `SOUL.md` from behavioral preferences rather than personal facts.
+
+Interactive preview for the default profile:
+
+```bash
+python scripts/build_personality.py
+```
+
+Preview for an existing named profile:
+
+```bash
+python scripts/build_personality.py --profile coder
+```
+
+The builder asks only about:
+
+- tone: neutral / warm / formal / direct
+- verbosity: low / medium / high
+- initiative: cautious / balanced / proactive
+- confirmation threshold: strict / balanced / fast
+- memory conservatism: minimal / balanced / rich
+
+It shows a unified diff and is **preview-only by default**. Apply after reviewing:
+
+```bash
+python scripts/build_personality.py --profile coder --apply
+```
+
+For a deterministic non-interactive configuration:
+
+```bash
+python scripts/build_personality.py \
+  --profile coder \
+  --tone direct \
+  --verbosity medium \
+  --initiative proactive \
+  --confirmation balanced \
+  --memory balanced \
+  --apply --yes
+```
+
+Before replacing a profile SOUL, the script copies the existing file into the local stack state directory under `personality-backups/<profile>/`. Those backups are runtime/user data and must not be committed to Git.
+
+A misspelled/nonexistent named profile is rejected instead of silently creating an arbitrary profile directory. Create the profile first with `install_profiles.py` or Hermes' own profile command.
+
+You can also generate a SOUL to a standalone file without touching Hermes:
+
+```bash
+python scripts/build_personality.py \
+  --tone warm --verbosity medium --initiative balanced \
+  --confirmation strict --memory minimal \
+  --output ./SOUL-preview.md --apply --yes
+```
+
+This output mode is used by CI to ensure deterministic personality generation remains valid.
 
 ## Model / Codex OAuth
 
@@ -97,6 +155,12 @@ Use these boundaries:
 
 Keeping these roles distinct reduces prompt clutter and prevents repository-specific rules from contaminating unrelated work.
 
-## Future personality builder
+## Planned profile hardening
 
-The roadmap includes an interactive builder that will preview/diff a generated SOUL before writing it. It should customize dimensions such as directness, verbosity, initiative, confirmation threshold and memory conservatism without embedding secrets or personal profile data into Git.
+Next profile work should focus on **authority**, not more personality prose:
+
+- profile-specific MCP allowlists
+- profile-specific skill sets
+- Hindsight mission/retention guidance by role
+- an operator profile that requires stricter confirmation for destructive infrastructure changes
+- documented rules for which connectors should never be shared across profiles
