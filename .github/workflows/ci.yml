@@ -24,6 +24,10 @@ jobs:
         run: python -m compileall -q bootstrap.py scripts
       - name: Bootstrap privacy invariants
         run: python bootstrap.py --self-test
+      - name: Private-network invariants
+        run: python scripts/private_network.py --self-test
+      - name: Profile bundle discovery
+        run: python scripts/install_profiles.py --list
       - name: PowerShell syntax
         if: runner.os == 'Windows'
         shell: pwsh
@@ -67,6 +71,18 @@ jobs:
               for p in pathlib.Path('.').rglob(pattern):
                   yaml.safe_load(p.read_text())
                   print('ok', p)
+          PY
+      - name: Validate profile SOUL bundles
+        run: |
+          python - <<'PY'
+          import pathlib
+          required = {'private-personal', 'coder', 'researcher', 'operator'}
+          root = pathlib.Path('templates/profiles')
+          found = {p.parent.name for p in root.glob('*/SOUL.md') if p.stat().st_size > 100}
+          missing = required - found
+          if missing:
+              raise SystemExit('missing/empty SOUL bundles: ' + ', '.join(sorted(missing)))
+          print('profile bundles ok:', ', '.join(sorted(found)))
           PY
       - name: Compose structure
         run: docker compose -f stack/compose.yml --profile core config --quiet
