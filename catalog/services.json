@@ -1,0 +1,10 @@
+[
+  {"name":"Hermes","required":true,"host":"local","data":"~/.hermes","privacy":"local profile + selected providers"},
+  {"name":"Hindsight","required":true,"host":"localhost/tailnet","ports":[8888,9999],"data":"Docker volume","privacy":"authoritative long-term memory"},
+  {"name":"Ollama","required":true,"host":"container-network-only","ports":[],"data":"Docker volume","privacy":"auxiliary inference"},
+  {"name":"SearXNG","required":true,"host":"127.0.0.1","ports":[8088],"data":"cache only","privacy":"search aggregation"},
+  {"name":"Docling","required":false,"host":"127.0.0.1","ports":[5001],"data":"ephemeral unless configured","privacy":"document parsing"},
+  {"name":"Activepieces","required":false,"host":"127.0.0.1","ports":[8090],"data":"Docker volume","privacy":"OAuth connections are sensitive"},
+  {"name":"OpenViking","required":false,"host":"127.0.0.1","ports":[1933],"data":"Docker volume","privacy":"knowledge/context can be sensitive"},
+  {"name":"Firecrawl","required":false,"host":"127.0.0.1","ports":[3002],"data":"multiple services","privacy":"crawler; heavy optional service"}
+]
