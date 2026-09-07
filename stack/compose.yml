@@ -1,0 +1,91 @@
+name: hermes-privacy-stack
+services:
+  ollama:
+    profiles: ["core"]
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama
+    networks: [private]
+
+  ollama-init:
+    profiles: ["core"]
+    image: curlimages/curl:latest
+    depends_on: [ollama]
+    restart: "no"
+    networks: [private]
+    entrypoint: ["/bin/sh","-c"]
+    command: >-
+      'until curl -fsS http://ollama:11434/api/tags >/dev/null; do sleep 2; done;
+       curl -fsS http://ollama:11434/api/pull -d ''{"name":"qwen3.5:4b","stream":false}'' || true'
+
+  hindsight:
+    profiles: ["core"]
+    image: ghcr.io/vectorize-io/hindsight:latest
+    restart: unless-stopped
+    shm_size: 1gb
+    depends_on: [ollama]
+    environment:
+      HINDSIGHT_API_LLM_PROVIDER: ollama
+      HINDSIGHT_API_LLM_MODEL: qwen3.5:4b
+      HINDSIGHT_API_LLM_BASE_URL: http://ollama:11434
+      HINDSIGHT_API_WORKER_ID: hermes-privacy-stack
+    ports:
+      - "127.0.0.1:8888:8888"
+      - "127.0.0.1:9999:9999"
+    volumes:
+      - hindsight_data:/home/hindsight/.pg0
+    networks: [private]
+
+  searxng:
+    profiles: ["core"]
+    image: searxng/searxng:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8088:8080"
+    volumes:
+      - ./config/searxng:/etc/searxng:ro
+      - searxng_data:/var/cache/searxng
+    networks: [private]
+
+  docling:
+    profiles: ["core"]
+    image: quay.io/docling-project/docling-serve:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5001:5001"
+    networks: [private]
+
+  activepieces:
+    profiles: ["automation"]
+    image: activepieces/activepieces:latest
+    restart: unless-stopped
+    environment:
+      AP_DB_TYPE: PGLITE
+      AP_REDIS_TYPE: MEMORY
+      AP_FRONTEND_URL: http://localhost:8090
+    ports:
+      - "127.0.0.1:8090:80"
+    volumes:
+      - activepieces_data:/root/.activepieces
+    networks: [private]
+
+  openviking:
+    profiles: ["knowledge"]
+    image: ghcr.io/volcengine/openviking:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:1933:1933"
+    volumes:
+      - openviking_data:/app/.openviking
+    networks: [private]
+
+networks:
+  private:
+    driver: bridge
+volumes:
+  ollama_data:
+  hindsight_data:
+  searxng_data:
+  activepieces_data:
+  openviking_data:
