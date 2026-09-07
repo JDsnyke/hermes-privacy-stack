@@ -1,13 +1,112 @@
 [
-  {"name":"privacy-audit","source":"bundled","default":true,"risk":"low","status":"reviewed"},
-  {"name":"memory-hygiene","source":"bundled","default":true,"risk":"low","status":"reviewed"},
-  {"name":"document-intake","source":"bundled","default":true,"risk":"low","status":"reviewed"},
-  {"name":"research-pipeline","source":"bundled","default":true,"risk":"medium","status":"reviewed"},
-  {"name":"multi-instance-sync","source":"bundled","default":true,"risk":"medium","status":"reviewed"},
-  {"name":"backup-restore","source":"bundled","default":true,"risk":"high","status":"reviewed"},
-  {"name":"hindsight-docs","source":"https://github.com/vectorize-io/hindsight","default":false,"risk":"low","status":"review-upstream-before-install"},
-  {"name":"frontend-design","source":"Anthropic community skill ecosystem","default":false,"risk":"medium","status":"review-and-pin-before-install"},
-  {"name":"agent-browser","source":"Vercel skill ecosystem","default":false,"risk":"high","status":"review-and-pin-before-install"},
-  {"name":"tdd","source":"community skill ecosystem","default":false,"risk":"medium","status":"review-and-pin-before-install"},
-  {"name":"find-skills","source":"community skill ecosystem","default":false,"risk":"high","status":"do-not-auto-install"}
+  {
+    "name": "privacy-audit",
+    "identifier": "bundled:privacy-audit",
+    "source": "bundled",
+    "default": true,
+    "risk": "low",
+    "status": "reviewed"
+  },
+  {
+    "name": "memory-hygiene",
+    "identifier": "bundled:memory-hygiene",
+    "source": "bundled",
+    "default": true,
+    "risk": "low",
+    "status": "reviewed"
+  },
+  {
+    "name": "document-intake",
+    "identifier": "bundled:document-intake",
+    "source": "bundled",
+    "default": true,
+    "risk": "low",
+    "status": "reviewed"
+  },
+  {
+    "name": "research-pipeline",
+    "identifier": "bundled:research-pipeline",
+    "source": "bundled",
+    "default": true,
+    "risk": "medium",
+    "status": "reviewed"
+  },
+  {
+    "name": "multi-instance-sync",
+    "identifier": "bundled:multi-instance-sync",
+    "source": "bundled",
+    "default": true,
+    "risk": "medium",
+    "status": "reviewed"
+  },
+  {
+    "name": "backup-restore",
+    "identifier": "bundled:backup-restore",
+    "source": "bundled",
+    "default": true,
+    "risk": "high",
+    "status": "reviewed"
+  },
+  {
+    "name": "arxiv",
+    "identifier": "official/research/arxiv",
+    "source": "hermes-official-optional",
+    "default": false,
+    "risk": "low",
+    "status": "prefer-official-when-needed",
+    "notes": "Install through Hermes Skills Hub; official optional skill."
+  },
+  {
+    "name": "frontend-design",
+    "identifier": "skills-sh/anthropics/skills/frontend-design",
+    "source": "skills-sh",
+    "default": false,
+    "risk": "medium",
+    "status": "inspect-and-audit-before-install",
+    "notes": "Useful for frontend/UI work; community/upstream content must be re-reviewed at install time."
+  },
+  {
+    "name": "test-driven-development",
+    "identifier": "skills-sh/obra/superpowers/test-driven-development",
+    "source": "skills-sh",
+    "default": false,
+    "risk": "medium",
+    "status": "inspect-and-audit-before-install",
+    "notes": "Strong workflow constraints; suited to coder profile when explicitly desired."
+  },
+  {
+    "name": "verification-before-completion",
+    "identifier": "skills-sh/obra/superpowers/verification-before-completion",
+    "source": "skills-sh",
+    "default": false,
+    "risk": "medium",
+    "status": "inspect-and-audit-before-install",
+    "notes": "Evidence/verification guardrail; useful candidate for coder/operator."
+  },
+  {
+    "name": "systematic-debugging",
+    "identifier": "skills-sh/obra/superpowers/systematic-debugging",
+    "source": "skills-sh",
+    "default": false,
+    "risk": "medium",
+    "status": "inspect-and-audit-before-install"
+  },
+  {
+    "name": "agent-browser",
+    "identifier": "skills-sh/vercel-labs/agent-browser/agent-browser",
+    "source": "skills-sh",
+    "default": false,
+    "risk": "high",
+    "status": "inspect-and-audit-before-install",
+    "notes": "High authority and partly redundant with Hermes local browser; install only for a demonstrated need."
+  },
+  {
+    "name": "find-skills",
+    "identifier": "skills-sh/vercel-labs/skills/find-skills",
+    "source": "skills-sh",
+    "default": false,
+    "risk": "high",
+    "status": "normally-skip",
+    "notes": "Hermes already has native Skills Hub browse/search/inspect; avoid redundant autonomous discovery/install surface."
+  }
 ]
