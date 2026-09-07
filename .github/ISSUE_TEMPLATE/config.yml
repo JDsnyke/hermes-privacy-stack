@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security / sensitive report
+    url: https://github.com/JDsnyke/hermes-privacy-stack/security
+    about: Do not open a public issue for credentials, exposed services, or vulnerabilities that need confidential handling. Use GitHub's private security reporting/advisory flow when available.
+  - name: Hermes Agent upstream
+    url: https://github.com/NousResearch/hermes-agent/issues
+    about: Use this when the bug reproduces in a clean Hermes install without Hermes Privacy Stack.
