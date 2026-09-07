@@ -4,6 +4,12 @@ memory:
   # configured separately by the provider and remains profile-isolated.
   write_approval: true
 
+skills:
+  # Persistent agent-created procedures are powerful. Stage every skill write for
+  # explicit review and also scan agent-created content for suspicious patterns.
+  write_approval: true
+  guard_agent_created: true
+
 web:
   search_backend: searxng
   # Fail closed: never silently retry a failed private search through anonymous
