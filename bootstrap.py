@@ -5,7 +5,8 @@ Design rules:
 - OAuth/API credentials are never requested or stored by this repository.
 - Hermes authentication/model selection stays inside Hermes' own CLI.
 - Local services bind to loopback by default.
-- Server mode rejects wildcard/public binds and is intended for a private tailnet/RFC1918 address.
+- Server mode rejects wildcard/public binds and accepts only an exact private overlay/LAN address.
+- Private networking is provider-agnostic (NetBird, Tailscale/Headscale, WireGuard, etc.).
 - Runtime secrets and generated service config live outside the Git checkout.
 """
 from __future__ import annotations
@@ -94,7 +95,6 @@ def atomic_write(path: Path, content: str, private: bool = False) -> None:
 
 
 def write_env_var(path: Path, key: str, value: str) -> None:
-    """Set one non-secret environment variable without duplicating it."""
     path.parent.mkdir(parents=True, exist_ok=True)
     lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
     out: list[str] = []
@@ -126,64 +126,101 @@ def install_hermes(non_interactive: bool = False) -> None:
         run(["bash", "-lc", "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash"])
 
 
-def detect_tailscale_ipv4() -> str | None:
-    if not command("tailscale"):
-        return None
-    try:
-        proc = run(["tailscale", "ip", "-4"], check=False, capture=True)
-        if proc.returncode:
-            return None
-        for line in proc.stdout.splitlines():
-            value = line.strip()
-            if value:
-                validate_private_bind(value)
-                return value
-    except Exception:
-        return None
-    return None
-
-
 def validate_private_bind(value: str) -> str:
-    """Allow loopback, RFC1918/link-local, or Tailscale CGNAT; reject wildcard/global addresses."""
-    raw = value.strip()
+    """Allow exact loopback/private/link-local/CGNAT IPv4; reject wildcard/global addresses."""
+    raw = value.strip().split("/", 1)[0]
     if raw in {"0.0.0.0", "::", "*", ""}:
         raise ValueError("Wildcard/empty bind addresses are not allowed by the privacy-first installer.")
     try:
         ip = ipaddress.ip_address(raw)
     except ValueError as exc:
         raise ValueError("Bind address must be an IP address, not a hostname.") from exc
+    if ip.version != 4:
+        raise ValueError("Server binding currently requires an IPv4 address.")
 
-    tailscale_net = ipaddress.ip_network("100.64.0.0/10")
-    safe = ip.is_loopback or ip.is_private or ip.is_link_local or (ip.version == 4 and ip in tailscale_net)
+    cgnat = ipaddress.ip_network("100.64.0.0/10")
+    safe = ip.is_loopback or ip.is_private or ip.is_link_local or ip in cgnat
     if not safe:
-        raise ValueError(f"{raw} is a globally routable address. Refusing to expose unauthenticated local services.")
+        raise ValueError(f"{raw} is a globally routable address. Refusing to expose local services.")
     return raw
 
 
-def select_bind_address(role: str, supplied: str | None, non_interactive: bool) -> str:
-    if role == "client":
-        return "127.0.0.1"
-    if role == "local":
-        return validate_private_bind(supplied or "127.0.0.1")
-    if supplied:
-        return validate_private_bind(supplied)
+def _run_overlay_ip(cmd: list[str]) -> str | None:
+    if not command(cmd[0]):
+        return None
+    try:
+        proc = run(cmd, check=False, capture=True)
+    except Exception:
+        return None
+    if proc.returncode:
+        return None
+    for line in proc.stdout.splitlines():
+        try:
+            return validate_private_bind(line.strip())
+        except ValueError:
+            continue
+    return None
 
-    detected = detect_tailscale_ipv4()
-    if detected and not non_interactive and yesno(f"Bind server services to detected Tailscale address {detected}?", True):
-        return detected
+
+def detect_netbird_ipv4() -> str | None:
+    return _run_overlay_ip(["netbird", "status", "--ipv4"])
+
+
+def detect_tailscale_ipv4() -> str | None:
+    # Works for ordinary Tailscale and Tailscale clients enrolled against Headscale.
+    return _run_overlay_ip(["tailscale", "ip", "-4"])
+
+
+def detect_overlay_ipv4(provider: str = "auto") -> tuple[str, str] | None:
+    detectors = []
+    if provider in {"auto", "netbird"}:
+        detectors.append(("netbird", detect_netbird_ipv4))
+    if provider in {"auto", "tailscale"}:
+        detectors.append(("tailscale-or-headscale", detect_tailscale_ipv4))
+    for name, detector in detectors:
+        value = detector()
+        if value:
+            return name, value
+    return None
+
+
+def select_bind_address(role: str, supplied: str | None, non_interactive: bool, network_provider: str) -> tuple[str, str]:
+    if role == "client":
+        return "127.0.0.1", "client"
+    if role == "local":
+        return validate_private_bind(supplied or "127.0.0.1"), "local"
+    if supplied:
+        return validate_private_bind(supplied), network_provider if network_provider != "auto" else "manual"
+
+    # For non-interactive automation, `auto` is intentionally not allowed to pick
+    # whichever client happens to be installed. Select a provider or pass --bind-address.
+    if non_interactive and network_provider in {"auto", "manual"}:
+        raise SystemExit(
+            "Non-interactive server role requires --bind-address, or an explicit "
+            "--network-provider netbird|tailscale with a connected client."
+        )
+
+    if network_provider != "manual":
+        detected = detect_overlay_ipv4(network_provider)
+        if detected:
+            provider, value = detected
+            if non_interactive or yesno(f"Bind server services to detected {provider} address {value}?", True):
+                return value, provider
+        elif network_provider in {"netbird", "tailscale"} and non_interactive:
+            raise SystemExit(f"No connected {network_provider} IPv4 address detected.")
+
     if non_interactive:
-        raise SystemExit("--bind-address is required for non-interactive server role.")
+        raise SystemExit("--bind-address is required for this server configuration.")
 
     while True:
-        raw = input("Private bind IP for server services (Tailscale 100.64/10 or RFC1918; never 0.0.0.0): ").strip()
+        raw = input("Private overlay/LAN IPv4 for server services (never 0.0.0.0): ").strip()
         try:
-            return validate_private_bind(raw)
+            return validate_private_bind(raw), "manual"
         except ValueError as exc:
             print(f"! {exc}")
 
 
 def ensure_runtime_searxng() -> Path:
-    """Create a runtime-only SearXNG config with a unique secret key."""
     runtime_dir = RUNTIME / "searxng"
     ensure_private_dir(runtime_dir)
     target = runtime_dir / "settings.yml"
@@ -214,7 +251,13 @@ def compose_base() -> list[str]:
     return ["docker", "compose", "--env-file", str(STACK_ENV), "-f", str(ROOT / "stack" / "compose.yml")]
 
 
-def start_stack(preset: str, role: str, bind_address: str, non_interactive: bool = False, enable_activepieces: bool = False) -> list[str]:
+def start_stack(
+    preset: str,
+    role: str,
+    bind_address: str,
+    non_interactive: bool = False,
+    enable_activepieces: bool = False,
+) -> list[str]:
     if role == "client":
         print("Client role: no local service stack started.")
         return []
@@ -228,7 +271,9 @@ def start_stack(preset: str, role: str, bind_address: str, non_interactive: bool
 
     profiles = ["core"]
     if preset in {"balanced", "developer"}:
-        activepieces = enable_activepieces or (not non_interactive and yesno("Start optional Activepieces integration service?", False))
+        activepieces = enable_activepieces or (
+            not non_interactive and yesno("Start optional Activepieces integration service?", False)
+        )
         if activepieces:
             profiles.append("automation")
         print("ℹ OpenViking remains opt-in/planned until authenticated runtime config is generated safely.")
@@ -243,7 +288,6 @@ def start_stack(preset: str, role: str, bind_address: str, non_interactive: bool
 
 
 def snapshot_hermes() -> None:
-    """Take a local Hermes quick backup before changing an existing config."""
     if not command("hermes") or not (HERMES_HOME / "config.yaml").exists():
         return
     print("Taking a local Hermes pre-configuration snapshot...")
@@ -294,7 +338,12 @@ def seed_templates(non_interactive: bool = False) -> None:
         print("✓ SOUL.md installed")
     user = HERMES_HOME / "USER.md"
     if not user.exists():
-        atomic_write(user, "# User\n\nThis file is intentionally local and is never sourced from Git. Add only information you want Hermes to retain as durable profile context.\n", private=True)
+        atomic_write(
+            user,
+            "# User\n\nThis file is intentionally local and is never sourced from Git. "
+            "Add only information you want Hermes to retain as durable profile context.\n",
+            private=True,
+        )
         print("✓ Local USER.md created")
 
 
@@ -310,14 +359,23 @@ def resolve_client_url(value: str | None, label: str, non_interactive: bool, exa
         print("! Enter an http:// or https:// URL reachable only through your trusted network.")
 
 
-def save_install_state(preset: str, role: str, bind_address: str, hindsight_url: str, searxng_url: str, profiles: list[str]) -> None:
+def save_install_state(
+    preset: str,
+    role: str,
+    bind_address: str,
+    hindsight_url: str,
+    searxng_url: str,
+    profiles: list[str],
+    network_provider: str,
+) -> None:
     ensure_private_dir(STATE)
     payload = {
-        "schema": 2,
+        "schema": 3,
         "preset": preset,
         "role": role,
         "platform": platform.platform(),
         "bind_address": bind_address,
+        "network_provider": network_provider,
         "hindsight_url": hindsight_url,
         "searxng_url": searxng_url,
         "compose_profiles": profiles,
@@ -325,11 +383,37 @@ def save_install_state(preset: str, role: str, bind_address: str, hindsight_url:
     atomic_write(STATE / "install.json", json.dumps(payload, indent=2) + "\n", private=True)
 
 
+def self_test() -> None:
+    for candidate in [
+        "127.0.0.1",
+        "192.168.1.20",
+        "10.0.0.2",
+        "172.16.1.4",
+        "100.64.0.1",
+        "100.119.62.6/16",
+    ]:
+        validate_private_bind(candidate)
+    for rejected in ["0.0.0.0", "::", "8.8.8.8", "1.1.1.1"]:
+        try:
+            validate_private_bind(rejected)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"self-test failed: unsafe bind accepted: {rejected}")
+    print("bootstrap self-test passed")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Install/configure Hermes Privacy Stack")
     ap.add_argument("--preset", choices=["strict", "balanced", "developer", "minimal"])
     ap.add_argument("--role", choices=["local", "server", "client"])
-    ap.add_argument("--bind-address", help="Private IP to bind local services (server role).")
+    ap.add_argument("--bind-address", help="Exact private IPv4 to bind local services (server role).")
+    ap.add_argument(
+        "--network-provider",
+        choices=["auto", "netbird", "tailscale", "manual"],
+        default="auto",
+        help="Overlay detection preference for server role. 'tailscale' also covers Headscale-managed clients.",
+    )
     ap.add_argument("--hindsight-url", help="Existing Hindsight URL for client role.")
     ap.add_argument("--searxng-url", help="Existing SearXNG URL for client role.")
     ap.add_argument("--non-interactive", action="store_true")
@@ -341,30 +425,37 @@ def main() -> int:
     if sys.version_info < (3, 10):
         raise SystemExit("Python 3.10+ required")
     if args.self_test:
-        for candidate in ["127.0.0.1", "192.168.1.20", "10.0.0.2", "100.64.0.1"]:
-            validate_private_bind(candidate)
-        for rejected in ["0.0.0.0", "::", "8.8.8.8"]:
-            try:
-                validate_private_bind(rejected)
-            except ValueError:
-                pass
-            else:
-                raise SystemExit(f"self-test failed: unsafe bind accepted: {rejected}")
-        print("bootstrap self-test passed")
+        self_test()
         return 0
 
     print("\nHermes Privacy Stack — local first, secrets never in Git\n")
-    preset = args.preset or ("balanced" if args.non_interactive else choose("Privacy preset", ["strict", "balanced", "developer", "minimal"], 2))
-    role = args.role or ("local" if args.non_interactive else choose("Machine role", ["local", "server", "client"], 1))
+    preset = args.preset or (
+        "balanced" if args.non_interactive else choose("Privacy preset", ["strict", "balanced", "developer", "minimal"], 2)
+    )
+    role = args.role or (
+        "local" if args.non_interactive else choose("Machine role", ["local", "server", "client"], 1)
+    )
 
     install_hermes(args.non_interactive)
     snapshot_hermes()
     seed_templates(args.non_interactive)
-    bind_address = select_bind_address(role, args.bind_address, args.non_interactive)
+    bind_address, effective_network_provider = select_bind_address(
+        role, args.bind_address, args.non_interactive, args.network_provider
+    )
 
     if role == "client":
-        hindsight_url = resolve_client_url(args.hindsight_url, "--hindsight-url / Hindsight private URL", args.non_interactive, "http://100.64.0.10:8888")
-        searxng_url = resolve_client_url(args.searxng_url, "--searxng-url / SearXNG private URL", args.non_interactive, "http://100.64.0.10:8088")
+        hindsight_url = resolve_client_url(
+            args.hindsight_url,
+            "--hindsight-url / Hindsight private URL",
+            args.non_interactive,
+            "http://100.100.20.30:8888",
+        )
+        searxng_url = resolve_client_url(
+            args.searxng_url,
+            "--searxng-url / SearXNG private URL",
+            args.non_interactive,
+            "http://100.100.20.30:8088",
+        )
         profiles: list[str] = []
     else:
         runtime_searxng = ensure_runtime_searxng()
@@ -375,7 +466,15 @@ def main() -> int:
 
     configure_hindsight(hindsight_url)
     configure_privacy_web(searxng_url)
-    save_install_state(preset, role, bind_address, hindsight_url, searxng_url, profiles)
+    save_install_state(
+        preset,
+        role,
+        bind_address,
+        hindsight_url,
+        searxng_url,
+        profiles,
+        effective_network_provider,
+    )
     if command("hermes"):
         run(["hermes", "config", "check"], check=False)
 
@@ -386,7 +485,10 @@ def main() -> int:
             run(["hermes", "model"], check=False)
     print(f"\nRun diagnostics anytime: python {ROOT / 'scripts' / 'doctor.py'}")
     if role == "server":
-        print("Server mode is bound to a private IP only. Restrict that IP/ports further with Tailscale ACLs.")
+        print(
+            f"Server mode is bound only to {bind_address} ({effective_network_provider}). "
+            "Restrict service ports further with your overlay ACL/policy or host firewall."
+        )
     print("Review ROADMAP.md before enabling optional high-authority MCPs.")
     return 0
 
