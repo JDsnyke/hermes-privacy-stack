@@ -1,0 +1,68 @@
+[
+  {
+    "id": "activepieces",
+    "name": "Activepieces",
+    "default": false,
+    "risk": "high",
+    "transport": "http",
+    "purpose": "OAuth-backed SaaS integrations and workflows",
+    "url": "http://127.0.0.1:8090/mcp",
+    "notes": "Enable only after configuring connections; restrict exposed tools."
+  },
+  {
+    "id": "openviking",
+    "name": "OpenViking",
+    "default": false,
+    "risk": "medium",
+    "transport": "http",
+    "purpose": "Persistent context/knowledge filesystem",
+    "url": "http://127.0.0.1:1933",
+    "notes": "Keep on localhost/tailnet. Review MCP path/version upstream."
+  },
+  {
+    "id": "docling",
+    "name": "Docling",
+    "default": false,
+    "risk": "low",
+    "transport": "http",
+    "purpose": "Local document conversion/extraction",
+    "url": "http://127.0.0.1:5001",
+    "notes": "Prefer read/convert operations; do not expose publicly."
+  },
+  {
+    "id": "markitdown",
+    "name": "MarkItDown MCP",
+    "default": false,
+    "risk": "medium",
+    "transport": "stdio",
+    "purpose": "Lightweight file/URL to Markdown conversion",
+    "notes": "Scope filesystem paths."
+  },
+  {
+    "id": "filesystem",
+    "name": "Filesystem MCP",
+    "default": false,
+    "risk": "high",
+    "transport": "stdio",
+    "purpose": "Direct filesystem access",
+    "notes": "Usually redundant with Hermes; if used, allowlist a narrow directory."
+  },
+  {
+    "id": "github",
+    "name": "GitHub MCP",
+    "default": false,
+    "risk": "high",
+    "transport": "http/stdio",
+    "purpose": "Repository operations",
+    "notes": "Prefer read-only token/profile first; separate write-authority profile."
+  },
+  {
+    "id": "toolhive",
+    "name": "ToolHive",
+    "default": false,
+    "risk": "medium",
+    "transport": "gateway",
+    "purpose": "MCP isolation/policy/aggregation",
+    "notes": "Add when MCP surface becomes large."
+  }
+]
