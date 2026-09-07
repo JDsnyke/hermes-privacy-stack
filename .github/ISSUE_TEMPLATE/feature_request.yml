@@ -1,0 +1,61 @@
+name: Feature request
+description: Propose a privacy-preserving feature, integration, skill, platform or workflow.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The project optimizes for **local-first operation, least privilege and graceful degradation**. Features that require a cloud service should explain why the cloud dependency is worth the privacy trade-off and whether a self-hosted alternative exists.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: What capability is missing or awkward today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the user experience, not just the product/library name.
+    validations:
+      required: true
+  - type: dropdown
+    id: layer
+    attributes:
+      label: Area
+      options:
+        - Installer / platform support
+        - Privacy / security
+        - Memory / sync
+        - Search / research
+        - Documents / RAG
+        - Browser automation
+        - MCP / integrations
+        - Skills / personalities
+        - Backup / disaster recovery
+        - GitHub Pages / UI
+        - Observability / maintenance
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: privacy
+    attributes:
+      label: Privacy and trust impact
+      description: Data leaving the device, credentials/scopes required, listening ports, telemetry, supply-chain dependencies, and least-privilege controls.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Self-hosted/free alternatives considered
+      description: Include alternatives and why this proposal is preferable.
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Checks
+      options:
+        - label: This request does not contain credentials, OAuth tokens, private memory, or other secrets.
+          required: true
