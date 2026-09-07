@@ -1,0 +1,13 @@
+[
+  {"name":"privacy-audit","source":"bundled","default":true,"risk":"low","status":"reviewed"},
+  {"name":"memory-hygiene","source":"bundled","default":true,"risk":"low","status":"reviewed"},
+  {"name":"document-intake","source":"bundled","default":true,"risk":"low","status":"reviewed"},
+  {"name":"research-pipeline","source":"bundled","default":true,"risk":"medium","status":"reviewed"},
+  {"name":"multi-instance-sync","source":"bundled","default":true,"risk":"medium","status":"reviewed"},
+  {"name":"backup-restore","source":"bundled","default":true,"risk":"high","status":"reviewed"},
+  {"name":"hindsight-docs","source":"https://github.com/vectorize-io/hindsight","default":false,"risk":"low","status":"review-upstream-before-install"},
+  {"name":"frontend-design","source":"Anthropic community skill ecosystem","default":false,"risk":"medium","status":"review-and-pin-before-install"},
+  {"name":"agent-browser","source":"Vercel skill ecosystem","default":false,"risk":"high","status":"review-and-pin-before-install"},
+  {"name":"tdd","source":"community skill ecosystem","default":false,"risk":"medium","status":"review-and-pin-before-install"},
+  {"name":"find-skills","source":"community skill ecosystem","default":false,"risk":"high","status":"do-not-auto-install"}
+]
