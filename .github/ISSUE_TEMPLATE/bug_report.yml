@@ -1,0 +1,70 @@
+name: Bug report
+description: Report a reproducible problem in the installer, stack, docs, skills or integrations.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Do not paste API keys, OAuth tokens, memory contents, `.env` files, or private logs.** Redact usernames, hostnames and tailnet addresses unless they are necessary.
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Windows native
+        - WSL2
+        - macOS Apple Silicon
+        - macOS Intel
+        - Linux x86_64
+        - Linux ARM64
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Repository commit/tag
+      placeholder: git rev-parse HEAD
+    validations:
+      required: true
+  - type: dropdown
+    id: preset
+    attributes:
+      label: Preset
+      options: [strict, balanced, developer, minimal, custom]
+    validations:
+      required: true
+  - type: dropdown
+    id: role
+    attributes:
+      label: Machine role
+      options: [local, server, client]
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Include the command/step and the observed behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Sanitized diagnostics
+      description: Prefer `python scripts/doctor.py --json`. Remove anything sensitive before pasting.
+      render: shell
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: I checked this report for credentials, tokens, personal memory, private URLs and other secrets.
+          required: true
