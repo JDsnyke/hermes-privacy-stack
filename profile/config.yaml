@@ -1,0 +1,4 @@
+memory:
+  provider: hindsight
+# Provider/model authentication is intentionally not shipped.
+# Run `hermes model` locally and choose OpenAI Codex / ChatGPT OAuth.
