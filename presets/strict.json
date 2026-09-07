@@ -1,0 +1,11 @@
+{
+  "description": "Maximum privacy, minimal authority",
+  "services": ["hindsight", "ollama", "searxng", "docling"],
+  "optional_services": [],
+  "memory": "hindsight",
+  "bank_id_template": "hermes-{profile}",
+  "listen": "127.0.0.1",
+  "telemetry": false,
+  "community_skills_auto_install": false,
+  "high_authority_mcp": false
+}
