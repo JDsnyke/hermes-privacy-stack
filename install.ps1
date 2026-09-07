@@ -14,8 +14,20 @@ $Python = Get-Command python -ErrorAction SilentlyContinue
 if (-not $Python) { $Python = Get-Command py -ErrorAction SilentlyContinue }
 if (-not $Python) { throw "Python 3.10+ is required." }
 
+$SkipGuided = ($env:HPS_SKIP_GUIDED -eq "1") -or ($args -contains "--non-interactive") -or ($args -contains "--self-test")
+
 if ($Python.Name -eq "py.exe") {
     & py -3 (Join-Path $Root "bootstrap.py") @args
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    if (-not $SkipGuided -and (Test-Path (Join-Path $Root "scripts\guided_setup.py"))) {
+        & py -3 (Join-Path $Root "scripts\guided_setup.py")
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    }
 } else {
     & $Python.Source (Join-Path $Root "bootstrap.py") @args
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    if (-not $SkipGuided -and (Test-Path (Join-Path $Root "scripts\guided_setup.py"))) {
+        & $Python.Source (Join-Path $Root "scripts\guided_setup.py")
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    }
 }
