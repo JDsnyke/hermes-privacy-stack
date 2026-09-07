@@ -84,6 +84,22 @@ jobs:
               raise SystemExit('missing/empty SOUL bundles: ' + ', '.join(sorted(missing)))
           print('profile bundles ok:', ', '.join(sorted(found)))
           PY
+      - name: Personality builder deterministic output
+        run: |
+          tmp="$(mktemp)"
+          python scripts/build_personality.py \
+            --tone direct \
+            --verbosity low \
+            --initiative balanced \
+            --confirmation strict \
+            --memory minimal \
+            --output "$tmp" \
+            --apply \
+            --yes
+          grep -q '^# Soul — Custom Private Hermes' "$tmp"
+          grep -q 'Never place passwords' "$tmp"
+          grep -q 'Confirm before external writes' "$tmp"
+          rm -f "$tmp"
       - name: Compose structure
         run: docker compose -f stack/compose.yml --profile core config --quiet
       - name: Verify SearXNG runtime secret marker
