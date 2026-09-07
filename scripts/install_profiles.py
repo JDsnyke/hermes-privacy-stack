@@ -5,6 +5,9 @@ This script deliberately uses `hermes profile create` without --clone/--clone-al
 Profiles therefore start with fresh local state instead of copying `.env`, auth, memory,
 or sessions from another profile. Existing SOUL.md files are never overwritten unless
 --force-soul is explicitly supplied.
+
+Use --lean when creating new profiles to opt out of Hermes' full bundled-skill seed.
+This is useful for least-authority profiles where skills will be added explicitly.
 """
 from __future__ import annotations
 
@@ -47,7 +50,7 @@ def profile_dir(name: str) -> Path:
     return hermes_home() / "profiles" / name
 
 
-def install_one(name: str, force_soul: bool, alias: bool, dry_run: bool) -> None:
+def install_one(name: str, force_soul: bool, alias: bool, dry_run: bool, lean: bool) -> None:
     source = TEMPLATES / name / "SOUL.md"
     if not source.exists():
         raise SystemExit(f"Unknown profile bundle: {name}")
@@ -57,12 +60,16 @@ def install_one(name: str, force_soul: bool, alias: bool, dry_run: bool) -> None
 
     if not target_dir.exists():
         cmd = ["hermes", "profile", "create", name, "--no-alias"]
+        if lean:
+            cmd.append("--no-bundled-skills")
         if dry_run:
             print("DRY RUN:", " ".join(cmd))
         else:
             run(cmd)
     else:
         print(f"ℹ Profile already exists: {name}")
+        if lean:
+            print("ℹ --lean only affects creation; existing profile skill settings are not changed automatically.")
 
     if target_soul.exists() and not force_soul:
         print(f"↷ Preserving existing {target_soul}; use --force-soul to replace it.")
@@ -96,6 +103,11 @@ def main() -> int:
     parser.add_argument("--list", action="store_true", help="List bundled profiles")
     parser.add_argument("--force-soul", action="store_true", help="Replace an existing profile SOUL.md")
     parser.add_argument("--alias", action="store_true", help="Create Hermes shell aliases")
+    parser.add_argument(
+        "--lean",
+        action="store_true",
+        help="For newly created profiles, opt out of the full Hermes bundled-skill seed.",
+    )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
@@ -117,9 +129,11 @@ def main() -> int:
         raise SystemExit("Unknown profile bundle(s): " + ", ".join(unknown))
 
     for name in requested:
-        install_one(name, args.force_soul, args.alias, args.dry_run)
+        install_one(name, args.force_soul, args.alias, args.dry_run, args.lean)
 
     print("\nProfiles installed without cloning credentials or memory.")
+    if args.lean:
+        print("Lean profiles opted out of the full bundled-skill seed; add reviewed skills explicitly.")
     print("Configure model/auth for each profile using Hermes' own setup/model flow as needed.")
     return 0
 
