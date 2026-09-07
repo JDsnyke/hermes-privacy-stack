@@ -1,0 +1,12 @@
+{
+  "description": "Coding-heavy local stack",
+  "services": ["hindsight", "ollama", "searxng", "docling"],
+  "optional_services": ["activepieces", "openviking", "firecrawl"],
+  "memory": "hindsight",
+  "bank_id_template": "hermes-{profile}",
+  "listen": "127.0.0.1",
+  "telemetry": false,
+  "community_skills_auto_install": false,
+  "high_authority_mcp": false,
+  "codex_runtime": true
+}
