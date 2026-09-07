@@ -56,13 +56,7 @@ def yesno(prompt: str, default: bool = False) -> bool:
     return default if not raw else raw in {"y", "yes"}
 
 
-def build_soul(
-    tone: str,
-    verbosity: str,
-    initiative: str,
-    confirmation: str,
-    memory: str,
-) -> str:
+def build_soul(tone: str, verbosity: str, initiative: str, confirmation: str, memory: str) -> str:
     tone_map = {
         "neutral": "Use a calm, professional, natural tone without performative enthusiasm.",
         "warm": "Be warm and personable while remaining grounded, concise and non-patronizing.",
@@ -189,7 +183,13 @@ def main() -> int:
     if args.output:
         target = Path(args.output).expanduser()
     else:
-        target = profile_home(args.profile) / "SOUL.md"
+        home = profile_home(args.profile)
+        if args.profile != "default" and not home.exists():
+            raise SystemExit(
+                f"Hermes profile '{args.profile}' does not exist. Create it first with "
+                f"`python scripts/install_profiles.py {args.profile}` or `hermes profile create {args.profile}`."
+            )
+        target = home / "SOUL.md"
 
     old = target.read_text(encoding="utf-8") if target.exists() else ""
     show_diff(old, generated, target)
