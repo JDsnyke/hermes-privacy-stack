@@ -1,0 +1,65 @@
+# Credentials / secrets
+.env
+.env.*
+!.env.example
+**/auth.json
+**/auth.lock
+**/*token*
+**/*credentials*
+**/rclone.conf
+**/tailscale*.json
+
+# Hermes user data / runtime state
+memories/
+sessions/
+logs/
+plans/
+workspace/
+home/
+local/
+backups/
+checkpoints/
+sandboxes/
+*_cache/
+state.db*
+hermes_state.db*
+response_store.db*
+gateway.pid
+gateway_state.json
+processes.json
+active_profile
+.hermes_history
+
+# Service state
+.stack-data/
+.hindsight/
+.openviking/
+.activepieces/
+searxng-data/
+firecrawl-data/
+docling-data/
+ollama-data/
+*.sqlite
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
+
+# Language/tooling
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+node_modules/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Generated config (may contain local addresses)
+generated/
+site/generated-config.json
