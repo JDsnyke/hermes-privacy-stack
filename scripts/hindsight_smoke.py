@@ -80,32 +80,22 @@ def retain(base_url: str, bank: str, content: str, document_id: str, timeout: in
 
 def recall(base_url: str, bank: str, query: str, timeout: int) -> Any:
     path = f"/v1/default/banks/{urllib.parse.quote(bank, safe='')}/memories/recall"
-    return request(
-        base_url,
-        "POST",
-        path,
-        {"query": query, "budget": "low", "max_tokens": 1000},
-        timeout,
-    )
+    return request(base_url, "POST", path, {"query": query, "budget": "low", "max_tokens": 1000}, timeout)
 
 
 def reflect(base_url: str, bank: str, query: str, timeout: int) -> Any:
     path = f"/v1/default/banks/{urllib.parse.quote(bank, safe='')}/reflect"
-    return request(
-        base_url,
-        "POST",
-        path,
-        {"query": query, "budget": "low", "max_tokens": 1000},
-        timeout,
-    )
+    return request(base_url, "POST", path, {"query": query, "budget": "low", "max_tokens": 1000}, timeout)
 
 
-def delete_bank(base_url: str, bank: str, timeout: int) -> None:
+def delete_bank(base_url: str, bank: str, timeout: int) -> bool:
     path = f"/v1/default/banks/{urllib.parse.quote(bank, safe='')}"
     try:
         request(base_url, "DELETE", path, None, timeout)
+        return True
     except RuntimeError as exc:
         print(f"! Could not delete synthetic bank {bank}: {exc}")
+        return False
 
 
 def main() -> int:
@@ -135,6 +125,7 @@ def main() -> int:
         "cleanup": False,
     }
 
+    return_code = 1
     try:
         first = retain(
             args.url,
@@ -179,14 +170,16 @@ def main() -> int:
     except Exception as exc:
         summary["ok"] = False
         summary["error"] = str(exc)
-        return_code = 1
     finally:
         if args.keep_bank:
             summary["cleanup"] = False
             summary["kept"] = True
         else:
-            delete_bank(args.url, bank, args.timeout)
-            summary["cleanup"] = True
+            summary["cleanup"] = delete_bank(args.url, bank, args.timeout)
+            if not summary["cleanup"] and return_code == 0:
+                summary["ok"] = False
+                summary["error"] = "memory checks passed but synthetic bank cleanup failed"
+                return_code = 1
 
     if args.json:
         print(json.dumps(summary, indent=2))
