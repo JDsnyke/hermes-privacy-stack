@@ -114,12 +114,12 @@ Legend: `[x]` complete · `[-]` partial/in progress · `[ ]` planned.
 - [ ] Export generated config as a local JSON download without transmitting it.
 - [ ] Interactive threat-model wizard.
 - [ ] Dark/light theme persisted locally.
-- [ ] GitHub Pages deploy workflow and documented private/public mirror options.
+- [x] GitHub Pages deploy workflow and documented private/public mirror options.
 
 ## v0.7 — observability and maintenance
 
 - [x] Local `doctor.py` skeleton for component health.
-- [ ] Structured doctor output (`--json`) for support bundles.
+- [x] Structured doctor output (`--json`) for support bundles.
 - [ ] Optional self-hosted Langfuse plugin profile, disabled by default.
 - [ ] Dependency update bot with human review and release notes.
 - [ ] Container vulnerability scanning in CI.
