@@ -1,10 +1,44 @@
 name: CI
+
 on:
   push:
   pull_request:
+
 permissions:
   contents: read
+
 jobs:
+  cross-platform:
+    name: Bootstrap self-test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Python syntax
+        run: python -m compileall -q bootstrap.py scripts
+      - name: Bootstrap privacy invariants
+        run: python bootstrap.py --self-test
+      - name: PowerShell syntax
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $errors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path ./install.ps1),
+            [ref]$null,
+            [ref]$errors
+          )
+          if ($errors.Count -gt 0) {
+            $errors | Format-List | Out-String | Write-Error
+            exit 1
+          }
+
   validate:
     runs-on: ubuntu-latest
     steps:
@@ -14,8 +48,6 @@ jobs:
           python-version: '3.12'
       - name: Secret hygiene
         run: python scripts/check_secrets.py
-      - name: Python syntax
-        run: python -m compileall -q bootstrap.py scripts
       - name: Shell syntax
         run: bash -n install.sh
       - name: Validate JSON
@@ -26,14 +58,23 @@ jobs:
               json.loads(p.read_text())
               print('ok', p)
           PY
-      - name: Validate YAML parse
+      - name: Validate YAML
         run: |
           python -m pip install --quiet pyyaml
           python - <<'PY'
           import pathlib, yaml
-          for p in [pathlib.Path('profile/distribution.yaml'), pathlib.Path('profile/config.yaml'), pathlib.Path('stack/compose.yml'), pathlib.Path('stack/config/searxng/settings.yml')]:
-              yaml.safe_load(p.read_text())
-              print('ok', p)
+          for pattern in ('*.yml', '*.yaml'):
+              for p in pathlib.Path('.').rglob(pattern):
+                  yaml.safe_load(p.read_text())
+                  print('ok', p)
           PY
-      - name: Verify static site files
-        run: test -s site/index.html && test -s site/styles.css && test -s site/app.js
+      - name: Compose structure
+        run: docker compose -f stack/compose.yml --profile core config --quiet
+      - name: Verify SearXNG runtime secret marker
+        run: grep -q '__HPS_SEARXNG_SECRET__' stack/config/searxng/settings.yml
+      - name: Verify static site files and local-only dependencies
+        run: |
+          test -s site/index.html
+          test -s site/styles.css
+          test -s site/app.js
+          ! grep -Eri '<script[^>]+src="https?://|<link[^>]+href="https?://|google-analytics|gtag\(' site
