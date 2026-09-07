@@ -6,7 +6,7 @@
 - Python 3.10+
 - Docker Desktop / Docker Engine + Compose v2 for the self-hosted services
 - GitHub CLI (`gh`) when the repository is private
-- Tailscale is strongly recommended only for a shared `server` role
+- For shared-server mode, a trusted private overlay such as **NetBird, Headscale/Tailscale, Netmaker or WireGuard**
 
 Hermes itself can be installed by the wizard through the official Nous Research installer.
 
@@ -32,6 +32,8 @@ gh repo clone JDsnyke/hermes-privacy-stack "$HOME\.hermes-privacy-stack" -- --de
 
 Choose **Balanced → Local** for the normal first install. Services bind to `127.0.0.1` only.
 
+### Stage 1 — core bootstrap
+
 The bootstrap:
 
 1. installs/keeps Hermes,
@@ -42,6 +44,28 @@ The bootstrap:
 6. points Hermes at Hindsight and SearXNG,
 7. disables Hermes keyless web fallback/rescue,
 8. opens Hermes' own model picker for Codex OAuth.
+
+### Stage 2 — guided privacy/profile setup
+
+Interactive installs then run a second-stage wizard. It can:
+
+- create isolated `private-personal`, `coder`, and `researcher` profiles,
+- optionally create the high-authority `operator` profile,
+- create profiles in **lean** mode without the full bundled-skill seed,
+- launch the personality/SOUL builder with diff preview,
+- enable approval before Hermes persists memory and agent-created skill writes,
+- enable scanning of agent-created skill content,
+- validate the final Hermes configuration.
+
+No credentials or personal profile facts are requested by this second stage.
+
+It is state-aware and does not repeat on every install. Revisit it explicitly with:
+
+```bash
+python scripts/guided_setup.py --force
+```
+
+Set `HPS_SKIP_GUIDED=1` if you deliberately want only the core bootstrap. `--non-interactive` and `--self-test` skip the guided stage automatically.
 
 ## Configure Codex OAuth
 
@@ -66,19 +90,91 @@ For a privacy-safe support bundle:
 python scripts/doctor.py --json --redact
 ```
 
+When Hindsight is running, test the real memory path with a temporary synthetic bank:
+
+```bash
+python scripts/hindsight_smoke.py
+```
+
+The script performs synchronous **retain → recall → reflect**, checks synthetic markers, and deletes the test bank afterward.
+
+## Profiles and personalities
+
+List bundled roles:
+
+```bash
+python scripts/install_profiles.py --list
+```
+
+Create least-authority/lean profiles explicitly:
+
+```bash
+python scripts/install_profiles.py private-personal coder researcher --lean
+```
+
+Preview a custom SOUL without writing:
+
+```bash
+python scripts/build_personality.py --profile coder
+```
+
+See [PROFILES.md](PROFILES.md).
+
+## Skills
+
+Prefer Hermes' native Skills Hub security pipeline rather than manually copying community skills into the profile.
+
+Inspect first:
+
+```bash
+python scripts/review_skill.py skills-sh/obra/superpowers/verification-before-completion
+```
+
+Install only after review:
+
+```bash
+python scripts/review_skill.py \
+  skills-sh/obra/superpowers/verification-before-completion \
+  --profile coder \
+  --install
+```
+
+The wrapper uses Hermes' native inspect/quarantine/security-scan/audit flow and deliberately does **not** expose `--force`. See [SKILLS.md](SKILLS.md).
+
 ## Shared memory server
 
 Run one authoritative stack on a machine that is always available. Do **not** use `0.0.0.0`.
 
-Example with a Tailscale address:
+Detect a supported overlay address:
 
 ```bash
-./install.sh --role server --bind-address 100.64.10.20
+python scripts/private_network.py
 ```
 
-The installer rejects globally routable/wildcard addresses. Apply Tailscale ACLs so only your own client devices can reach ports `8888`, `8088`, `5001` and any optional services.
+### NetBird
 
-See [TAILSCALE.md](TAILSCALE.md) and [MEMORY-SYNC.md](MEMORY-SYNC.md).
+```bash
+./install.sh --role server --network-provider netbird
+```
+
+### Tailscale or a Tailscale client enrolled against Headscale
+
+```bash
+./install.sh --role server --network-provider tailscale
+```
+
+### Any trusted overlay / deterministic automation
+
+```bash
+./install.sh \
+  --role server \
+  --network-provider manual \
+  --bind-address 100.100.20.30
+```
+
+The installer rejects globally routable/wildcard addresses. Apply overlay policies/firewall rules so ordinary Hermes clients normally reach only `8888` (Hindsight API) and `8088` (SearXNG); keep admin surfaces restricted separately.
+
+See [PRIVATE-NETWORKING.md](PRIVATE-NETWORKING.md), [NETBIRD.md](NETBIRD.md), [HEADSCALE.md](HEADSCALE.md), [TAILSCALE.md](TAILSCALE.md), and [MEMORY-SYNC.md](MEMORY-SYNC.md).
 
 ## Additional client computer
 
@@ -87,8 +183,8 @@ A client does not start the local Docker stack. Point it at the private server:
 ```bash
 ./install.sh \
   --role client \
-  --hindsight-url http://100.64.10.20:8888 \
-  --searxng-url http://100.64.10.20:8088
+  --hindsight-url http://100.100.20.30:8888 \
+  --searxng-url http://100.100.20.30:8088
 ```
 
 Both URLs are required in non-interactive client mode so web search fails closed instead of silently using another provider.
@@ -99,7 +195,7 @@ Both URLs are required in non-interactive client mode so web search fails closed
 ./install.sh --preset balanced --role local --non-interactive --skip-model-setup
 ```
 
-This is suitable for scripted machines. OAuth still needs to be completed through Hermes separately unless it already exists locally.
+This is suitable for scripted machines. The guided profile/personality stage is skipped. OAuth still needs to be completed through Hermes separately unless it already exists locally.
 
 ## Optional services
 
