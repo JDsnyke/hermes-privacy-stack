@@ -1,4 +1,15 @@
 memory:
   provider: hindsight
+  # Built-in MEMORY.md / USER.md writes require approval. Hindsight retention is
+  # configured separately by the provider and remains profile-isolated.
+  write_approval: true
+
+web:
+  search_backend: searxng
+  # Fail closed: never silently retry a failed private search through anonymous
+  # SaaS/free-tier providers.
+  keyless_fallback: false
+  keyless_rescue: false
+
 # Provider/model authentication is intentionally not shipped.
 # Run `hermes model` locally and choose OpenAI Codex / ChatGPT OAuth.
