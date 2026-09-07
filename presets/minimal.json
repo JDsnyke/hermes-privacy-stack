@@ -1,0 +1,11 @@
+{
+  "description": "Hermes plus lightweight local memory/search",
+  "services": ["hindsight", "ollama", "searxng"],
+  "optional_services": ["docling"],
+  "memory": "hindsight",
+  "bank_id_template": "hermes-{profile}",
+  "listen": "127.0.0.1",
+  "telemetry": false,
+  "community_skills_auto_install": false,
+  "high_authority_mcp": false
+}
