@@ -115,6 +115,7 @@ Legend: `[x]` complete · `[-]` partial/in progress · `[ ]` planned.
 - [ ] Interactive threat-model wizard.
 - [ ] Dark/light theme persisted locally.
 - [x] GitHub Pages deploy workflow and documented private/public mirror options.
+- [ ] Enable GitHub Pages for this repository with **Settings → Pages → Source: GitHub Actions**; current workflow cannot deploy until the Pages site is enabled.
 
 ## v0.7 — observability and maintenance
 
