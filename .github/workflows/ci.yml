@@ -30,6 +30,8 @@ jobs:
         run: python scripts/image_lock.py --self-test
       - name: Hindsight profile-bank configuration
         run: python scripts/test_hindsight_config.py
+      - name: Bootstrap twice-run idempotency
+        run: python scripts/test_bootstrap_idempotency.py
       - name: Profile bundle discovery
         run: python scripts/install_profiles.py --list
       - name: PowerShell syntax
