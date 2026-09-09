@@ -1,9 +1,10 @@
 name: hermes-privacy-stack
 
 # Runtime variables are written outside the Git checkout by bootstrap.py:
-#   HPS_BIND_ADDRESS           loopback or a private/tailnet IP (never 0.0.0.0)
-#   HPS_SEARXNG_CONFIG_DIR     runtime-only config with a generated secret
-#   HPS_HINDSIGHT_MODEL        auxiliary local model
+#   HPS_BIND_ADDRESS                      loopback or a private/overlay IP (never 0.0.0.0)
+#   HPS_SEARXNG_CONFIG_DIR                runtime-only config with a generated secret
+#   HPS_HINDSIGHT_MODEL                   auxiliary local model
+#   HPS_HINDSIGHT_AUTO_CONSOLIDATION      true by default; CI/bulk workflows may opt out
 #
 # Manual users can pass a private env file:
 #   docker compose --env-file /path/to/stack.env -f stack/compose.yml --profile core up -d
@@ -47,6 +48,10 @@ services:
       HINDSIGHT_API_LLM_BASE_URL: http://ollama:11434/v1
       HINDSIGHT_API_LLM_MAX_CONCURRENT: ${HPS_HINDSIGHT_LLM_MAX_CONCURRENT:-2}
       HINDSIGHT_API_LLM_TIMEOUT: ${HPS_HINDSIGHT_LLM_TIMEOUT:-300}
+      # Keep upstream behavior for normal installs. The integration workflow sets this
+      # false so its foreground reflect test cannot be starved by a just-enqueued
+      # background consolidation task on a single-slot CPU-only Ollama runner.
+      HINDSIGHT_API_ENABLE_AUTO_CONSOLIDATION: ${HPS_HINDSIGHT_AUTO_CONSOLIDATION:-true}
       HINDSIGHT_API_WORKER_ID: hermes-privacy-stack
     ports:
       - "${HPS_BIND_ADDRESS:-127.0.0.1}:8888:8888"
