@@ -23,6 +23,26 @@ import sys
 from pathlib import Path
 from typing import Iterable
 
+
+def _make_console_output_lossless_enough() -> None:
+    """Prevent status glyphs from crashing CP1252/legacy Windows consoles.
+
+    Keep the terminal's selected encoding rather than forcing UTF-8 globally. When a
+    cosmetic character is not representable, replace only that character instead of
+    aborting the installer. This also applies when bootstrap.py is imported by tests.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(errors="replace")
+        except (AttributeError, OSError, ValueError):
+            pass
+
+
+_make_console_output_lossless_enough()
+
 ROOT = Path(__file__).resolve().parent
 IS_WINDOWS = os.name == "nt"
 
