@@ -1,0 +1,186 @@
+name: Supply-chain evidence
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supply-chain-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      SYFT_VERSION: '1.51.1'
+      SYFT_SHA256: '8fcb33017a0dc1058298c923c436d19dfa68ae93968e0b423248542e3afb9fc3'
+      TRIVY_VERSION: '0.74.0'
+      TRIVY_SHA256: '2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+
+      - name: Validate image-lock helper
+        run: python scripts/image_lock.py --self-test
+
+      - name: Install checksum-pinned Syft and Trivy
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/hps-tools"
+          cd "$RUNNER_TEMP/hps-tools"
+
+          curl --fail --location --proto '=https' --tlsv1.2 \
+            "https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/syft_${SYFT_VERSION}_linux_amd64.tar.gz" \
+            -o syft.tar.gz
+          echo "${SYFT_SHA256}  syft.tar.gz" | sha256sum --check --strict
+          tar -xzf syft.tar.gz syft
+
+          curl --fail --location --proto '=https' --tlsv1.2 \
+            "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" \
+            -o trivy.tar.gz
+          echo "${TRIVY_SHA256}  trivy.tar.gz" | sha256sum --check --strict
+          tar -xzf trivy.tar.gz trivy
+
+          chmod 0755 syft trivy
+          echo "$RUNNER_TEMP/hps-tools" >> "$GITHUB_PATH"
+
+      - name: Record tool versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/supply-chain/tools
+          syft version > dist/supply-chain/tools/syft-version.txt
+          trivy --version > dist/supply-chain/tools/trivy-version.txt
+          printf '%s  %s\n' "$SYFT_SHA256" "syft_${SYFT_VERSION}_linux_amd64.tar.gz" > dist/supply-chain/tools/verified-tool-checksums.txt
+          printf '%s  %s\n' "$TRIVY_SHA256" "trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" >> dist/supply-chain/tools/verified-tool-checksums.txt
+
+      - name: Resolve Compose images to immutable digests
+        run: python scripts/image_lock.py --output-dir dist/supply-chain
+
+      - name: Generate repository SBOMs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/supply-chain/sbom/repository
+          syft dir:. -o cyclonedx-json=dist/supply-chain/sbom/repository/cyclonedx.json
+          syft dir:. -o spdx-json=dist/supply-chain/sbom/repository/spdx.json
+
+      - name: Generate image SBOMs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/supply-chain/sbom/images
+          python - <<'PY' > "$RUNNER_TEMP/hps-images.tsv"
+          import json, pathlib, re
+          data = json.loads(pathlib.Path('dist/supply-chain/images.lock.json').read_text())
+          for env_name, item in sorted(data['images'].items()):
+              slug = re.sub(r'[^a-z0-9]+', '-', env_name.lower()).strip('-')
+              print(f"{slug}\t{item['digest_ref']}")
+          PY
+          while IFS=$'\t' read -r slug ref; do
+            echo "SBOM: $ref"
+            syft "$ref" -o "cyclonedx-json=dist/supply-chain/sbom/images/${slug}.cyclonedx.json"
+            syft "$ref" -o "spdx-json=dist/supply-chain/sbom/images/${slug}.spdx.json"
+          done < "$RUNNER_TEMP/hps-images.tsv"
+
+      - name: Scan repository filesystem
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/supply-chain/trivy/repository
+          # Evidence-only while the project establishes a reviewed vulnerability baseline.
+          # Secret scanning remains handled separately by the fast CI workflow.
+          trivy fs \
+            --scanners vuln,misconfig \
+            --format json \
+            --output dist/supply-chain/trivy/repository/report.json \
+            --exit-code 0 \
+            .
+
+      - name: Scan locked images
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/supply-chain/trivy/images
+          python - <<'PY' > "$RUNNER_TEMP/hps-images.tsv"
+          import json, pathlib, re
+          data = json.loads(pathlib.Path('dist/supply-chain/images.lock.json').read_text())
+          for env_name, item in sorted(data['images'].items()):
+              slug = re.sub(r'[^a-z0-9]+', '-', env_name.lower()).strip('-')
+              print(f"{slug}\t{item['digest_ref']}")
+          PY
+          while IFS=$'\t' read -r slug ref; do
+            echo "Scan: $ref"
+            trivy image \
+              --scanners vuln \
+              --format json \
+              --output "dist/supply-chain/trivy/images/${slug}.json" \
+              --exit-code 0 \
+              "$ref"
+          done < "$RUNNER_TEMP/hps-images.tsv"
+
+      - name: Summarize vulnerability evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import collections, json, pathlib
+          root = pathlib.Path('dist/supply-chain/trivy')
+          rows = []
+          totals = collections.Counter()
+          for path in sorted(root.rglob('*.json')):
+              data = json.loads(path.read_text())
+              counts = collections.Counter()
+              for result in data.get('Results') or []:
+                  for vuln in result.get('Vulnerabilities') or []:
+                      counts[(vuln.get('Severity') or 'UNKNOWN').upper()] += 1
+              totals.update(counts)
+              rows.append((str(path.relative_to(root)), counts))
+          severities = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNKNOWN']
+          lines = [
+              '# Vulnerability evidence summary',
+              '',
+              '> Informational baseline only. This workflow does not yet fail on findings.',
+              '',
+              '| Report | Critical | High | Medium | Low | Unknown |',
+              '|---|---:|---:|---:|---:|---:|',
+          ]
+          for name, counts in rows:
+              lines.append('| ' + name + ' | ' + ' | '.join(str(counts[s]) for s in severities) + ' |')
+          lines += ['', '## Totals', '']
+          lines.append(', '.join(f'{s}: {totals[s]}' for s in severities))
+          pathlib.Path('dist/supply-chain/VULNERABILITY-SUMMARY.md').write_text('\n'.join(lines) + '\n')
+          with open(pathlib.Path().joinpath('/dev/stdout'), 'w') as _:
+              pass
+          print('\n'.join(lines))
+          PY
+          cat dist/supply-chain/VULNERABILITY-SUMMARY.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Hash complete evidence bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist/supply-chain
+          find . -type f ! -name 'ARTIFACT-SHA256SUMS' -print0 \
+            | sort -z \
+            | xargs -0 sha256sum > ARTIFACT-SHA256SUMS
+
+      - name: Upload supply-chain evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: supply-chain-evidence-${{ github.sha }}
+          path: dist/supply-chain/
+          if-no-files-found: error
+          retention-days: 30
