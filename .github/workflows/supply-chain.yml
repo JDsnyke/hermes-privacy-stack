@@ -3,15 +3,20 @@ name: Supply-chain evidence
 on:
   workflow_dispatch:
   push:
+    branches: [main]
     tags:
       - 'v*'
+    paths:
+      - 'scripts/image_lock.py'
+      - 'stack/compose.yml'
+      - '.github/workflows/supply-chain.yml'
 
 permissions:
   contents: read
 
 concurrency:
   group: supply-chain-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   evidence:
@@ -77,11 +82,10 @@ jobs:
           syft dir:. -o cyclonedx-json=dist/supply-chain/sbom/repository/cyclonedx.json
           syft dir:. -o spdx-json=dist/supply-chain/sbom/repository/spdx.json
 
-      - name: Generate image SBOMs
+      - name: Build locked image list
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p dist/supply-chain/sbom/images
           python - <<'PY' > "$RUNNER_TEMP/hps-images.tsv"
           import json, pathlib, re
           data = json.loads(pathlib.Path('dist/supply-chain/images.lock.json').read_text())
@@ -89,6 +93,13 @@ jobs:
               slug = re.sub(r'[^a-z0-9]+', '-', env_name.lower()).strip('-')
               print(f"{slug}\t{item['digest_ref']}")
           PY
+          test -s "$RUNNER_TEMP/hps-images.tsv"
+
+      - name: Generate image SBOMs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/supply-chain/sbom/images
           while IFS=$'\t' read -r slug ref; do
             echo "SBOM: $ref"
             syft "$ref" -o "cyclonedx-json=dist/supply-chain/sbom/images/${slug}.cyclonedx.json"
@@ -114,13 +125,6 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist/supply-chain/trivy/images
-          python - <<'PY' > "$RUNNER_TEMP/hps-images.tsv"
-          import json, pathlib, re
-          data = json.loads(pathlib.Path('dist/supply-chain/images.lock.json').read_text())
-          for env_name, item in sorted(data['images'].items()):
-              slug = re.sub(r'[^a-z0-9]+', '-', env_name.lower()).strip('-')
-              print(f"{slug}\t{item['digest_ref']}")
-          PY
           while IFS=$'\t' read -r slug ref; do
             echo "Scan: $ref"
             trivy image \
@@ -161,10 +165,9 @@ jobs:
               lines.append('| ' + name + ' | ' + ' | '.join(str(counts[s]) for s in severities) + ' |')
           lines += ['', '## Totals', '']
           lines.append(', '.join(f'{s}: {totals[s]}' for s in severities))
-          pathlib.Path('dist/supply-chain/VULNERABILITY-SUMMARY.md').write_text('\n'.join(lines) + '\n')
-          with open(pathlib.Path().joinpath('/dev/stdout'), 'w') as _:
-              pass
-          print('\n'.join(lines))
+          text = '\n'.join(lines) + '\n'
+          pathlib.Path('dist/supply-chain/VULNERABILITY-SUMMARY.md').write_text(text)
+          print(text, end='')
           PY
           cat dist/supply-chain/VULNERABILITY-SUMMARY.md >> "$GITHUB_STEP_SUMMARY"
 
