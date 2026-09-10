@@ -9,7 +9,9 @@ not drifted from this audited list, and emits:
 - images.lock.json  provenance-friendly metadata for every resolved image
 - SHA256SUMS        hashes of both lock files
 
-Runtime secrets and personal state are never read.
+Runtime secrets and personal state are never read. Compose-only secret placeholders are
+injected in-memory when enumerating optional profiles so release evidence generation
+does not require or disclose live Nango credentials.
 """
 from __future__ import annotations
 
@@ -43,9 +45,20 @@ SOURCES: dict[str, str] = {
 DIGEST_RE = re.compile(r"^.+@sha256:[0-9a-f]{64}$")
 
 
-def run(cmd: list[str], *, capture: bool = False) -> subprocess.CompletedProcess[str]:
+def run(
+    cmd: list[str],
+    *,
+    capture: bool = False,
+    env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
     print("+", " ".join(cmd))
-    return subprocess.run(cmd, check=True, text=True, capture_output=capture)
+    return subprocess.run(
+        cmd,
+        check=True,
+        text=True,
+        capture_output=capture,
+        env=env,
+    )
 
 
 def source_ref(env_name: str, default: str) -> str:
@@ -64,6 +77,16 @@ def repo_name(ref: str) -> str:
 def compose_images() -> set[str]:
     if not shutil.which("docker"):
         raise SystemExit("docker is required")
+
+    # The Nango Compose profile correctly requires runtime secrets before it can be
+    # started. Image enumeration needs only the service image references, however, so
+    # supply-chain tooling injects non-sensitive one-process placeholders rather than
+    # reading the user's private stack.env.
+    compose_env = os.environ.copy()
+    compose_env.setdefault("HPS_NANGO_ENCRYPTION_KEY", "image-lock-not-a-runtime-secret")
+    compose_env.setdefault("HPS_NANGO_DB_PASSWORD", "image-lock-not-a-runtime-secret")
+    compose_env.setdefault("HPS_NANGO_DASHBOARD_PASSWORD", "image-lock-not-a-runtime-secret")
+
     proc = run(
         [
             "docker",
@@ -80,6 +103,7 @@ def compose_images() -> set[str]:
             "--images",
         ],
         capture=True,
+        env=compose_env,
     )
     return {line.strip() for line in proc.stdout.splitlines() if line.strip()}
 
