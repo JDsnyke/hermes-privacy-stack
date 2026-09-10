@@ -27,8 +27,8 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 COMPOSE = ROOT / "stack" / "compose.yml"
 
-# Keep this list explicit. If Compose gains an image, --self-test / normal resolution
-# must fail until the new image and its trust implications are reviewed here.
+# Keep this list explicit. If Compose gains an image, normal resolution must fail
+# until the new image and its trust implications are reviewed here.
 SOURCES: dict[str, str] = {
     "HPS_OLLAMA_IMAGE": "ollama/ollama:latest",
     "HPS_CURL_IMAGE": "curlimages/curl:latest",
@@ -36,6 +36,8 @@ SOURCES: dict[str, str] = {
     "HPS_SEARXNG_IMAGE": "searxng/searxng:latest",
     "HPS_DOCLING_IMAGE": "quay.io/docling-project/docling-serve:latest",
     "HPS_ACTIVEPIECES_IMAGE": "activepieces/activepieces:latest",
+    "HPS_NANGO_POSTGRES_IMAGE": "postgres:16.0-alpine",
+    "HPS_NANGO_IMAGE": "nangohq/nango-server:hosted",
 }
 
 DIGEST_RE = re.compile(r"^.+@sha256:[0-9a-f]{64}$")
@@ -43,12 +45,7 @@ DIGEST_RE = re.compile(r"^.+@sha256:[0-9a-f]{64}$")
 
 def run(cmd: list[str], *, capture: bool = False) -> subprocess.CompletedProcess[str]:
     print("+", " ".join(cmd))
-    return subprocess.run(
-        cmd,
-        check=True,
-        text=True,
-        capture_output=capture,
-    )
+    return subprocess.run(cmd, check=True, text=True, capture_output=capture)
 
 
 def source_ref(env_name: str, default: str) -> str:
@@ -77,6 +74,8 @@ def compose_images() -> set[str]:
             "core",
             "--profile",
             "automation",
+            "--profile",
+            "nango",
             "config",
             "--images",
         ],
