@@ -76,6 +76,7 @@ def main() -> int:
     profiles = set(state.get("compose_profiles") or [])
     hindsight_url = str(state.get("hindsight_url") or "http://127.0.0.1:8888").rstrip("/")
     searxng_url = str(state.get("searxng_url") or "http://127.0.0.1:8088").rstrip("/")
+    nango_url = str(state.get("nango_url") or "http://127.0.0.1:3003").rstrip("/")
     bind_address = str(state.get("bind_address") or "127.0.0.1")
 
     for cmd, required in [("git", True), ("hermes", not args.static), ("docker", role != "client" and not args.static)]:
@@ -143,6 +144,10 @@ def main() -> int:
             http("Docling", scheme_host + ":5001/docs", required=False)
             if "automation" in profiles:
                 http("Activepieces", scheme_host + ":8090/", required=False)
+            if "nango" in profiles:
+                # Nango's /health route is intentionally unauthenticated upstream, so
+                # diagnostics do not need to read or expose dashboard/proxy credentials.
+                http("Nango", nango_url + "/health", required=False)
 
     failed_required = [c for c in checks if c["required"] and not c["ok"]]
     if args.json:
