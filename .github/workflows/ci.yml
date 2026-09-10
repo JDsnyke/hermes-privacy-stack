@@ -28,6 +28,10 @@ jobs:
         run: python scripts/private_network.py --self-test
       - name: Image-lock parser invariants
         run: python scripts/image_lock.py --self-test
+      - name: Nango setup invariants
+        run: python scripts/setup_nango.py --self-test
+      - name: Nango proxy authority invariants
+        run: python scripts/nango_proxy.py --self-test
       - name: Hindsight profile-bank configuration
         run: python scripts/test_hindsight_config.py
       - name: Bootstrap twice-run idempotency
@@ -106,8 +110,14 @@ jobs:
           grep -q 'Never place passwords' "$tmp"
           grep -q 'Confirm before external writes' "$tmp"
           rm -f "$tmp"
-      - name: Compose structure
+      - name: Compose core structure
         run: docker compose -f stack/compose.yml --profile core config --quiet
+      - name: Compose Nango structure
+        env:
+          HPS_NANGO_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+          HPS_NANGO_DB_PASSWORD: ci-placeholder
+          HPS_NANGO_DASHBOARD_PASSWORD: ci-placeholder
+        run: docker compose -f stack/compose.yml --profile nango config --quiet
       - name: Verify SearXNG runtime secret marker
         run: grep -q '__HPS_SEARXNG_SECRET__' stack/config/searxng/settings.yml
       - name: Verify static site files and local-only dependencies
