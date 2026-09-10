@@ -1,10 +1,11 @@
 name: hermes-privacy-stack
 
-# Runtime variables are written outside the Git checkout by bootstrap.py:
+# Runtime variables are written outside the Git checkout by bootstrap.py/setup scripts:
 #   HPS_BIND_ADDRESS                      loopback or a private/overlay IP (never 0.0.0.0)
 #   HPS_SEARXNG_CONFIG_DIR                runtime-only config with a generated secret
 #   HPS_HINDSIGHT_MODEL                   auxiliary local model
 #   HPS_HINDSIGHT_AUTO_CONSOLIDATION      true by default; CI/bulk workflows may opt out
+#   HPS_NANGO_*                           generated Nango secrets/URLs; never commit real values
 #
 # Manual users can pass a private env file:
 #   docker compose --env-file /path/to/stack.env -f stack/compose.yml --profile core up -d
@@ -48,9 +49,6 @@ services:
       HINDSIGHT_API_LLM_BASE_URL: http://ollama:11434/v1
       HINDSIGHT_API_LLM_MAX_CONCURRENT: ${HPS_HINDSIGHT_LLM_MAX_CONCURRENT:-2}
       HINDSIGHT_API_LLM_TIMEOUT: ${HPS_HINDSIGHT_LLM_TIMEOUT:-300}
-      # Keep upstream behavior for normal installs. The integration workflow sets this
-      # false so its foreground reflect test cannot be starved by a just-enqueued
-      # background consolidation task on a single-slot CPU-only Ollama runner.
       HINDSIGHT_API_ENABLE_AUTO_CONSOLIDATION: ${HPS_HINDSIGHT_AUTO_CONSOLIDATION:-true}
       HINDSIGHT_API_WORKER_ID: hermes-privacy-stack
     ports:
@@ -93,6 +91,60 @@ services:
       - activepieces_data:/root/.activepieces
     networks: [private]
 
+  nango-db:
+    profiles: ["nango"]
+    image: ${HPS_NANGO_POSTGRES_IMAGE:-postgres:16.0-alpine}
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: nango
+      POSTGRES_DB: nango
+      POSTGRES_PASSWORD: ${HPS_NANGO_DB_PASSWORD:?Run scripts/setup_nango.py first}
+    volumes:
+      - nango_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nango -d nango"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks: [private]
+
+  nango:
+    profiles: ["nango"]
+    image: ${HPS_NANGO_IMAGE:-nangohq/nango-server:hosted}
+    platform: ${HPS_NANGO_PLATFORM:-linux/amd64}
+    restart: unless-stopped
+    depends_on:
+      nango-db:
+        condition: service_healthy
+    environment:
+      NANGO_ENCRYPTION_KEY: ${HPS_NANGO_ENCRYPTION_KEY:?Run scripts/setup_nango.py first}
+      NANGO_DB_USER: nango
+      NANGO_DB_PASSWORD: ${HPS_NANGO_DB_PASSWORD:?Run scripts/setup_nango.py first}
+      NANGO_DB_HOST: nango-db
+      NANGO_DB_NAME: nango
+      NANGO_DB_SSL: "false"
+      SERVER_PORT: "3003"
+      NANGO_SERVER_URL: ${HPS_NANGO_SERVER_URL:-http://localhost:3003}
+      NANGO_PUBLIC_SERVER_URL: ${HPS_NANGO_SERVER_URL:-http://localhost:3003}
+      NANGO_DASHBOARD_API_URL: /
+      FLAG_AUTH_ENABLED: "false"
+      NANGO_DASHBOARD_USERNAME: ${HPS_NANGO_DASHBOARD_USERNAME:-hps-admin}
+      NANGO_DASHBOARD_PASSWORD: ${HPS_NANGO_DASHBOARD_PASSWORD:?Run scripts/setup_nango.py first}
+      FLAG_SERVE_CONNECT_UI: "true"
+      NANGO_CONNECT_UI_PORT: "3009"
+      NANGO_PUBLIC_CONNECT_URL: ${HPS_NANGO_CONNECT_URL:-http://localhost:3009}
+      NANGO_LOGS_ENABLED: "false"
+      NANGO_TELEMETRY_SDK: "false"
+      TELEMETRY: "false"
+      LOG_LEVEL: info
+      NANGO_PROXY_BASE_URL_OVERRIDE_ENABLED: "true"
+      NANGO_PROXY_BASE_URL_OVERRIDE_DENYLIST: '["169.254.169.254","metadata.google.internal","localhost","127.0.0.1","[::1]","[::ffff:127.0.0.1]","[::ffff:169.254.169.254]"]'
+      NANGO_OUTBOUND_URL_POLICY: '{"blockPrivateIps":true,"maxRedirects":3}'
+    ports:
+      - "${HPS_BIND_ADDRESS:-127.0.0.1}:3003:3003"
+      - "${HPS_BIND_ADDRESS:-127.0.0.1}:3009:3009"
+    networks: [private]
+
 networks:
   private:
     driver: bridge
@@ -102,3 +154,4 @@ volumes:
   hindsight_data:
   searxng_data:
   activepieces_data:
+  nango_db_data:
