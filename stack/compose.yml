@@ -123,6 +123,7 @@ services:
       NANGO_DB_HOST: nango-db
       NANGO_DB_NAME: nango
       NANGO_DB_SSL: "false"
+      RECORDS_DATABASE_URL: postgresql://nango:${HPS_NANGO_DB_PASSWORD:?Run scripts/setup_nango.py first}@nango-db:5432/nango
       SERVER_PORT: "3003"
       NANGO_SERVER_URL: ${HPS_NANGO_SERVER_URL:-http://localhost:3003}
       NANGO_PUBLIC_SERVER_URL: ${HPS_NANGO_SERVER_URL:-http://localhost:3003}
