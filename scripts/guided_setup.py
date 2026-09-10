@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Interactive post-bootstrap setup for profiles, SOUL and persistence approvals.
+"""Interactive post-bootstrap setup for profiles, SOUL, integrations and persistence approvals.
 
 Runs only after the core bootstrap succeeds. It never asks for credentials or personal
 facts. Answers are behavioral/security choices and local profile selections.
@@ -89,12 +89,22 @@ def customize_default_soul() -> None:
     run([sys.executable, str(ROOT / "scripts" / "build_personality.py"), "--profile", "default", "--apply"], check=False)
 
 
+def setup_nango(preset: str, role: str) -> None:
+    if role == "client":
+        return
+    if not yesno("Enable optional Nango Free Self-Hosted for OAuth/API credential management and proxying?", False):
+        return
+    print("Nango Free Self-Hosted is used here for Auth + Proxy only.")
+    print("Functions, webhooks, managed MCP and the full runtime are not assumed in the free self-host profile.")
+    run([sys.executable, str(ROOT / "scripts" / "setup_nango.py")], check=False)
+
+
 def mark_complete(state: dict) -> None:
     root = state_home()
     root.mkdir(parents=True, exist_ok=True)
     path = root / "guided.json"
     payload = {
-        "schema": 1,
+        "schema": 2,
         "completed": True,
         "preset": state.get("preset"),
         "role": state.get("role"),
@@ -135,11 +145,12 @@ def main() -> int:
     preset = str(state.get("preset") or "balanced")
     role = str(state.get("role") or "local")
 
-    print("\nHermes Privacy Stack — guided profile & persistence setup")
+    print("\nHermes Privacy Stack — guided profile, integration & persistence setup")
     print("No credentials or personal profile facts are requested here.\n")
 
     install_profiles(preset, role)
     customize_default_soul()
+    setup_nango(preset, role)
 
     gate_default = preset in {"strict", "balanced"}
     if yesno("Require approval before Hermes persists agent-created memory/skill writes?", gate_default):
