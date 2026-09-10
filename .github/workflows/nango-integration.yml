@@ -21,13 +21,15 @@ jobs:
   auth-proxy-self-host:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    env:
-      HERMES_PRIVACY_STACK_STATE: ${{ runner.temp }}/hps-state
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.12'
+
+      - name: Select ephemeral stack state directory
+        shell: bash
+        run: echo "HERMES_PRIVACY_STACK_STATE=$RUNNER_TEMP/hps-state" >> "$GITHUB_ENV"
 
       - name: Generate disposable Nango runtime secrets
         run: python scripts/setup_nango.py --no-start --no-install-skill
