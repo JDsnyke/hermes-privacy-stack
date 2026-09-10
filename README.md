@@ -1,6 +1,6 @@
 # Hermes Privacy Stack
 
-A privacy-first, local-by-default distribution around **Hermes Agent** and **OpenAI Codex OAuth**. It gives a fresh Hermes instance long-term memory, private search, document parsing, browser automation, curated MCPs/skills, encrypted backups, role-separated profiles, and a practical multi-device topology without making paid SaaS services part of the foundation.
+A privacy-first, local-by-default distribution around **Hermes Agent** and **OpenAI Codex OAuth**. It gives a fresh Hermes instance long-term memory, private search, document parsing, browser automation, curated MCPs/skills, optional credential brokering, encrypted backups, role-separated profiles, and a practical multi-device topology without making paid SaaS services part of the foundation.
 
 > **Privacy rule:** Git contains code, templates and reviewed defaults only. OAuth tokens, API keys, `USER.md`, live memory, sessions, service databases, generated runtime secrets and backups stay out of Git.
 
@@ -17,7 +17,8 @@ A privacy-first, local-by-default distribution around **Hermes Agent** and **Ope
 - Private networking is provider-agnostic: NetBird, Headscale/Tailscale, Netmaker, plain WireGuard, or another trusted overlay can be used.
 - Hermes search is explicitly pinned to self-hosted SearXNG with keyless fallback/rescue disabled.
 - Hindsight is shared by API, never by syncing live DB files.
-- SearXNG secrets and Compose runtime state are generated outside Git.
+- SearXNG and optional Nango runtime secrets are generated outside Git.
+- Nango can hold provider credentials so Hermes does not need direct access to external OAuth refresh tokens.
 - OpenViking is **not auto-started** until authenticated runtime provisioning is implemented.
 - Cloud storage is treated as encrypted backup transport, not trusted plaintext memory storage.
 
@@ -34,12 +35,13 @@ Read [docs/PRIVACY.md](docs/PRIVACY.md), [docs/THREAT-MODEL.md](docs/THREAT-MODE
                              │    │
                     memory   │    │ tools/context
                              │    │
-                    ┌────────▼┐  ┌▼──────────────────────┐
-                    │Hindsight│  │ local/private tools  │
-                    └────┬────┘  ├─ SearXNG             │
-                         │       ├─ Docling              │
-                  local Ollama   ├─ Hermes browser       │
-                                 └─ Activepieces (opt.)  │
+                    ┌────────▼┐  ┌▼────────────────────────┐
+                    │Hindsight│  │ local/private tools     │
+                    └────┬────┘  ├─ SearXNG                │
+                         │       ├─ Docling                 │
+                  local Ollama   ├─ Hermes browser          │
+                                 ├─ Activepieces (opt.)     │
+                                 └─ Nango Auth+Proxy (opt.) │
 
                        private overlay only
           (NetBird / Headscale / Tailscale / WireGuard)
@@ -60,6 +62,7 @@ OpenViking · Firecrawl · Crawl4AI · ToolHive · Windmill · MarkItDown
 | Documents | Docling | Local document parsing service |
 | Browser | Hermes local browser | Avoids Browserbase by default |
 | App automation | Activepieces | Optional single-machine PGLite/MEMORY mode |
+| Credential boundary | Nango Free Self-Hosted | Optional Auth + Proxy; provider credentials remain in Nango |
 | Private networking | Provider-agnostic | NetBird / Headscale / Tailscale / Netmaker / WireGuard |
 | Profiles | Four starter SOUL bundles | `private-personal`, `coder`, `researcher`, `operator` |
 | Knowledge context | OpenViking | **Planned secure installer; not auto-started yet** |
@@ -100,11 +103,38 @@ Hermes
 └── Hermes local browser
 ```
 
-Activepieces is opt-in. OpenViking and the heavier crawling/MCP layers remain staged until their security/configuration paths are fully automated.
+Activepieces and Nango are opt-in. OpenViking and the heavier crawling/MCP layers remain staged until their security/configuration paths are fully automated.
+
+## Nango: self-hosted Composio alternative for Auth + Proxy
+
+Enable Nango after the base install:
+
+```bash
+python scripts/setup_nango.py
+```
+
+Fresh guided installs also offer it interactively.
+
+The free self-host profile adds a private Postgres database plus Nango's API/dashboard and Connect UI. It generates the encryption key, DB password and dashboard password outside Git, keeps the DB off host ports, disables optional telemetry/log storage, and enables SSRF protections.
+
+The feature boundary is intentional: **Nango Free Self-Hosted provides Auth + Proxy here.** Nango's full functions/webhooks/managed MCP runtime is not assumed because those capabilities are Cloud/Enterprise features.
+
+Hermes can use Nango through the bundled read-only-by-default helper:
+
+```bash
+python scripts/nango_proxy.py \
+  --provider github \
+  --connection personal-github \
+  --path /user
+```
+
+POST/PUT/PATCH/DELETE require the explicit `--allow-write` flag. Create a Nango API key with only `environment:proxy` scope and store it as `NANGO_PROXY_TOKEN` in the local Hermes `.env`; never commit it.
+
+See [docs/NANGO.md](docs/NANGO.md).
 
 ## Profiles / personalities
 
-Hermes Privacy Stack now ships four reviewed SOUL starter bundles:
+Hermes Privacy Stack ships four reviewed SOUL starter bundles:
 
 ```text
 private-personal   general privacy-first assistant
@@ -197,6 +227,8 @@ python scripts/backup.py --mode full
 
 Restore tooling is documented in [docs/BACKUP-RESTORE.md](docs/BACKUP-RESTORE.md). Optional rclone-copy support requires explicit confirmation that the destination is an encrypted `crypt` remote.
 
+Nango database backup/restore is tracked separately because an encrypted Nango database must be restored together with its matching `NANGO_ENCRYPTION_KEY`.
+
 ## Safe updates
 
 ```bash
@@ -213,13 +245,13 @@ The updater refuses dirty checkouts, takes a Hermes quick backup, validates befo
 ├── install.sh / install.ps1         # bootstrap entrypoints
 ├── bootstrap.py                     # cross-platform privacy wizard
 ├── ROADMAP.md                       # living implementation tracker
-├── stack/compose.yml                # local service stack
+├── stack/compose.yml                # local + optional service profiles
 ├── presets/                         # install/security presets
 ├── profile/                         # base Hermes distribution template
 ├── templates/profiles/              # role-specific SOUL bundles
 ├── skills/                          # local reviewed skills
 ├── catalog/                         # MCP/skill/service catalog
-├── scripts/                         # doctor, backup, restore, profiles, network helpers
+├── scripts/                         # doctor, backup, restore, profiles, network/integration helpers
 ├── docs/                            # operational/security documentation
 ├── site/                            # zero-tracking interactive Pages site
 └── .github/                         # CI, Pages, issue/PR privacy templates
@@ -232,10 +264,11 @@ The updater refuses dirty checkouts, takes a Hermes quick backup, validates befo
 3. [Privacy principles](docs/PRIVACY.md) · [Threat model](docs/THREAT-MODEL.md)
 4. [Profiles](docs/PROFILES.md)
 5. [Memory sync](docs/MEMORY-SYNC.md) · [Private networking](docs/PRIVATE-NETWORKING.md) · [Tailscale/Headscale notes](docs/TAILSCALE.md)
-6. [Backup / restore](docs/BACKUP-RESTORE.md) · [Upgrade](docs/UPGRADE.md) · [Uninstall](docs/UNINSTALL.md)
-7. [MCP policy/catalog](docs/MCP.md) · [Skills](docs/SKILLS.md) · [Services](docs/SERVICES.md)
-8. [Windows](docs/WINDOWS.md) · [macOS](docs/MACOS.md) · [Linux](docs/LINUX.md)
-9. [GitHub Pages](docs/PAGES.md)
+6. [Nango Auth + Proxy](docs/NANGO.md) · [Services](docs/SERVICES.md)
+7. [Backup / restore](docs/BACKUP-RESTORE.md) · [Upgrade](docs/UPGRADE.md) · [Uninstall](docs/UNINSTALL.md)
+8. [MCP policy/catalog](docs/MCP.md) · [Skills](docs/SKILLS.md)
+9. [Windows](docs/WINDOWS.md) · [macOS](docs/MACOS.md) · [Linux](docs/LINUX.md)
+10. [GitHub Pages](docs/PAGES.md)
 
 ## Diagnostics
 
@@ -249,7 +282,7 @@ For a sanitized support bundle:
 python scripts/doctor.py --json --redact
 ```
 
-CI runs bootstrap and private-network privacy invariants plus profile-bundle discovery on Windows, macOS and Linux.
+CI runs bootstrap/private-network/Nango privacy invariants, profile-bank checks, twice-run idempotency and profile-bundle discovery on Windows, macOS and Linux.
 
 ## Upstream projects
 
@@ -258,6 +291,7 @@ CI runs bootstrap and private-network privacy invariants plus profile-bundle dis
 - SearXNG: https://docs.searxng.org/
 - Docling: https://docling-project.github.io/docling/
 - Activepieces: https://www.activepieces.com/docs/
+- Nango: https://nango.dev/docs/
 - NetBird: https://docs.netbird.io/
 - Headscale: https://headscale.net/
 - OpenViking: https://docs.openviking.ai/
@@ -265,4 +299,4 @@ CI runs bootstrap and private-network privacy invariants plus profile-bundle dis
 
 ## Security
 
-Read [SECURITY.md](SECURITY.md). Treat every MCP server, skill, browser target and automation connector as executable authority. Prefer fewer tools, fewer scopes, fewer listening ports, and fail-closed behavior.
+Read [SECURITY.md](SECURITY.md). Treat every MCP server, skill, browser target, credential broker and automation connector as executable authority. Prefer fewer tools, fewer scopes, fewer listening ports, and fail-closed behavior.
