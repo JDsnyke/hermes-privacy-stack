@@ -1,76 +1,107 @@
 # Hermes Privacy Stack
 
-A privacy-first, local-by-default distribution around **Hermes Agent** and **OpenAI Codex OAuth**. It gives a fresh Hermes instance long-term memory, private search, document parsing, browser automation, curated MCPs/skills, optional credential brokering, encrypted backups, role-separated profiles, and a practical multi-device topology without making paid SaaS services part of the foundation.
+A privacy-first, local-by-default Hermes Agent distribution built around a **strict-free** rule: bundled services must be self-hostable and fully usable without paid feature unlocks, license keys, or Enterprise-only capabilities.
 
 > **Privacy rule:** Git contains code, templates and reviewed defaults only. OAuth tokens, API keys, `USER.md`, live memory, sessions, service databases, generated runtime secrets and backups stay out of Git.
 
 ## Status
 
-**Pre-1.0 / active hardening.** See [ROADMAP.md](ROADMAP.md). The stack is designed so Hermes remains usable when optional services are unavailable.
+**Pre-1.0 / strict-free v2 migration.** See [ROADMAP.md](ROADMAP.md).
 
-> **Repository visibility:** GitHub currently reports this repository as **public**. The committed tree is deliberately public-safe, but the intended personal deployment is private. Change repository visibility in GitHub settings if you want the repo itself private.
+> **Repository visibility:** GitHub currently reports this repository as **public**. The committed tree is deliberately public-safe. Change repository visibility manually in GitHub settings if you want the repository itself private.
 
-## Privacy model
+## Strict-free policy
 
-- Local installs bind services to `127.0.0.1`.
-- Shared-server installs accept only a specific private/overlay IP; wildcard/public binds are rejected.
-- Private networking is provider-agnostic: NetBird, Headscale/Tailscale, Netmaker, plain WireGuard, or another trusted overlay can be used.
-- Hermes search is explicitly pinned to self-hosted SearXNG with keyless fallback/rescue disabled.
-- Hindsight is shared by API, never by syncing live DB files.
-- SearXNG and optional Nango runtime secrets are generated outside Git.
-- Nango can hold provider credentials so Hermes does not need direct access to external OAuth refresh tokens.
-- OpenViking is **not auto-started** until authenticated runtime provisioning is implemented.
-- Cloud storage is treated as encrypted backup transport, not trusted plaintext memory storage.
+The default architecture excludes services whose self-hosted edition has paid feature unlocks or depends on a commercial control plane. See [docs/STRICT-FREE.md](docs/STRICT-FREE.md).
 
-Read [docs/PRIVACY.md](docs/PRIVACY.md), [docs/THREAT-MODEL.md](docs/THREAT-MODEL.md), and [docs/PRIVATE-NETWORKING.md](docs/PRIVATE-NETWORKING.md).
+Removed from the supported stack under this policy:
+
+- Hindsight
+- Ollama
+- Nango
+- Activepieces
+- Windmill
+- NetBird
+- Firecrawl
+- ToolHive
+- OpenViking
+
+They may be excellent projects, but they do not match this repository's deliberately stricter product rule.
 
 ## Architecture
 
 ```text
-                         OpenAI Codex OAuth
-                                │
-                         ┌──────▼──────┐
-                         │ Hermes Agent│
-                         └───┬────┬────┘
-                             │    │
-                    memory   │    │ tools/context
-                             │    │
-                    ┌────────▼┐  ┌▼────────────────────────┐
-                    │Hindsight│  │ local/private tools     │
-                    └────┬────┘  ├─ SearXNG                │
-                         │       ├─ Docling                 │
-                  local Ollama   ├─ Hermes browser          │
-                                 ├─ Activepieces (opt.)     │
-                                 └─ Nango Auth+Proxy (opt.) │
+                         ┌────────────────────┐
+                         │    Hermes Agent    │
+                         └─────────┬──────────┘
+                                   │
+                ┌──────────────────┼──────────────────┐
+                │                  │                  │
+       ┌────────▼────────┐ ┌──────▼──────┐  ┌───────▼────────┐
+       │ mcp-memory-     │ │  SearXNG    │  │    Docling     │
+       │ service        │ │ private web │  │ docs / PDFs    │
+       │ SQLite + MCP   │ │ search      │  │                │
+       └────────────────┘ └─────────────┘  └────────────────┘
+                │
+                │ optional strict-free services
+                ├── llama.cpp       local model endpoint
+                ├── Crawl4AI        crawling/extraction
+                ├── Node-RED        flows/APIs/credentials
+                └── Forgejo         private Git
 
-                       private overlay only
-          (NetBird / Headscale / Tailscale / WireGuard)
-
-Planned authenticated additions:
-OpenViking · Firecrawl · Crawl4AI · ToolHive · Windmill · MarkItDown
+        private transport: Headscale or WireGuard/wg-easy
+        planned edge layer: Caddy + Authelia
+        file sync: Syncthing (never live databases)
+        backup: restic
 ```
 
-### Current components
+## Model choice
 
-| Layer | Current default | Notes |
+The installer treats the model separately from the self-hosted service stack.
+
+### Strict-free default — local llama.cpp
+
+```bash
+./install.sh \
+  --model-provider local \
+  --llama-model /path/to/model.gguf
+```
+
+The generated llama.cpp server uses a 65,536-token context because Hermes expects at least a 64K model context.
+
+### Optional — ChatGPT / Codex OAuth
+
+```bash
+./install.sh --model-provider chatgpt-oauth
+```
+
+The repository never asks for or stores your OpenAI OAuth token. Authentication remains inside Hermes' own `hermes model` flow. This option is intentionally **optional** and is not part of the strict-free self-hosted baseline.
+
+You can also skip model configuration and run `hermes model` later.
+
+## Current components
+
+| Purpose | Project | Status |
 |---|---|---|
-| Agent | Hermes Agent >= 0.21 | Profiles, skills, MCP, cron, browser, memory plugins |
-| Primary reasoning | Codex OAuth | Authentication happens in Hermes' own model wizard |
-| Long-term memory | Hindsight | External local/self-hosted server; profile-isolated banks |
-| Auxiliary memory LLM | Ollama | Container-only background memory inference |
-| Search | SearXNG | Explicit backend; anonymous Hermes fallback/rescue disabled |
-| Documents | Docling | Local document parsing service |
-| Browser | Hermes local browser | Avoids Browserbase by default |
-| App automation | Activepieces | Optional single-machine PGLite/MEMORY mode |
-| Credential boundary | Nango Free Self-Hosted | Optional Auth + Proxy; provider credentials remain in Nango |
-| Private networking | Provider-agnostic | NetBird / Headscale / Tailscale / Netmaker / WireGuard |
-| Profiles | Four starter SOUL bundles | `private-personal`, `coder`, `researcher`, `operator` |
-| Knowledge context | OpenViking | **Planned secure installer; not auto-started yet** |
-| Crawling | Firecrawl / Crawl4AI | Planned optional profiles |
+| Agent | Hermes Agent | Core |
+| Shared semantic memory | mcp-memory-service | Core |
+| Private search | SearXNG | Core |
+| Documents / PDFs | Docling Serve | Core |
+| Local LLM/VLM server | llama.cpp | Optional profile |
+| Crawling / extraction | Crawl4AI | Optional `research` profile |
+| Automation / API flows | Node-RED | Optional `automation` profile |
+| Private Git | Forgejo | Optional `git` profile |
+| Browser automation | Playwright MCP | Planned reviewed MCP profile |
+| Private networking | Headscale / WireGuard | External network layer |
+| Reverse proxy / TLS | Caddy | Planned deployment helper |
+| SSO / MFA | Authelia | Planned deployment helper |
+| File / Obsidian sync | Syncthing | Planned helper; non-DB files only |
+| Encrypted backup | restic | Migration in progress |
+| Containers | Podman Compose preferred | Docker Compose compatibility fallback |
 
 ## One-line install
 
-For the intended **private-repository** workflow, authenticate GitHub CLI once:
+For a private GitHub repository workflow, authenticate GitHub CLI once:
 
 ```bash
 gh auth login
@@ -88,53 +119,63 @@ gh repo clone JDsnyke/hermes-privacy-stack "$HOME/.hermes-privacy-stack" -- --de
 gh repo clone JDsnyke/hermes-privacy-stack "$HOME\.hermes-privacy-stack" -- --depth 1; & "$HOME\.hermes-privacy-stack\install.ps1"
 ```
 
-The installer dynamically asks for privacy preset, machine role and optional integrations. Codex OAuth stays inside Hermes' official model flow; this project never asks you to paste OAuth credentials.
+The interactive install asks for preset, machine role and model path. It does **not** ask for secrets.
 
 ## Recommended first install
 
-Choose **Balanced → Local**. That creates:
+For the self-hosted baseline, choose **Balanced → Local → local llama.cpp**.
+
+That gives you:
 
 ```text
 Hermes
-├── Codex OAuth (configured by Hermes)
-├── Hindsight → Ollama
+├── mcp-memory-service
 ├── SearXNG
 ├── Docling
-└── Hermes local browser
+├── Crawl4AI
+└── llama.cpp (your selected GGUF)
 ```
 
-Activepieces and Nango are opt-in. OpenViking and the heavier crawling/MCP layers remain staged until their security/configuration paths are fully automated.
+For a lighter machine, choose ChatGPT/Codex OAuth or `skip` for the model and run the core services without local inference.
 
-## Nango: self-hosted Composio alternative for Auth + Proxy
+## Presets
 
-Enable Nango after the base install:
+- **strict** — core memory/search/docs only; smallest service surface.
+- **balanced** — core + Crawl4AI research.
+- **developer** — core + Crawl4AI + Node-RED; optionally Forgejo.
+- **minimal** — Hermes only; attach external/private endpoints manually.
+
+## Multi-device memory
+
+Run one authoritative `mcp-memory-service` instance on an always-on trusted machine. Other Hermes clients access its Streamable HTTP MCP endpoint through **Headscale or WireGuard**, not by copying the SQLite database.
+
+Server example:
 
 ```bash
-python scripts/setup_nango.py
+./install.sh \
+  --role server \
+  --bind-address 100.64.10.20 \
+  --model-provider skip
 ```
 
-Fresh guided installs also offer it interactively.
-
-The free self-host profile adds a private Postgres database plus Nango's API/dashboard and Connect UI. It generates the encryption key, DB password and dashboard password outside Git, keeps the DB off host ports, disables optional telemetry/log storage, and enables SSRF protections.
-
-The feature boundary is intentional: **Nango Free Self-Hosted provides Auth + Proxy here.** Nango's full functions/webhooks/managed MCP runtime is not assumed because those capabilities are Cloud/Enterprise features.
-
-Hermes can use Nango through the bundled read-only-by-default helper:
+Client example:
 
 ```bash
-python scripts/nango_proxy.py \
-  --provider github \
-  --connection personal-github \
-  --path /user
+MCP_MEMORY_API_KEY='read-from-your-secret-manager' \
+./install.sh \
+  --role client \
+  --memory-url http://100.64.10.20:8765 \
+  --searxng-url http://100.64.10.20:8088 \
+  --model-provider chatgpt-oauth
 ```
 
-POST/PUT/PATCH/DELETE require the explicit `--allow-write` flag. Create a Nango API key with only `environment:proxy` scope and store it as `NANGO_PROXY_TOKEN` in the local Hermes `.env`; never commit it.
+The memory API key is accepted only through the process environment, never as a CLI argument.
 
-See [docs/NANGO.md](docs/NANGO.md).
+See [docs/MEMORY-SYNC.md](docs/MEMORY-SYNC.md), [docs/PRIVATE-NETWORKING.md](docs/PRIVATE-NETWORKING.md), and [docs/HEADSCALE.md](docs/HEADSCALE.md).
 
 ## Profiles / personalities
 
-Hermes Privacy Stack ships four reviewed SOUL starter bundles:
+Reviewed starter SOUL bundles:
 
 ```text
 private-personal   general privacy-first assistant
@@ -143,132 +184,52 @@ researcher         evidence-first research
 operator           infrastructure / automation
 ```
 
-Install them without cloning credentials or memory:
+Install without cloning credentials or memory:
 
 ```bash
 python scripts/install_profiles.py private-personal coder researcher
 ```
 
-or:
+Existing profile `SOUL.md` files are preserved unless overwrite is explicitly requested. See [docs/PROFILES.md](docs/PROFILES.md).
 
-```bash
-python scripts/install_profiles.py all --alias
-```
+## Privacy defaults
 
-Existing profile `SOUL.md` files are preserved unless `--force-soul` is explicitly used. See [docs/PROFILES.md](docs/PROFILES.md).
+- Services bind to `127.0.0.1` for local installs.
+- Server role accepts only exact private/CGNAT/LAN addresses; `0.0.0.0`, `::` and global addresses are rejected.
+- SearXNG is the explicit Hermes search backend; keyless fallback/rescue is disabled.
+- mcp-memory-service requires a generated local API key.
+- Node-RED gets a generated credential-encryption secret.
+- Secrets are stored in machine-local state outside Git.
+- Live SQLite/service databases are never synchronized through Syncthing/Drive/Dropbox.
+- High-authority skills and MCPs remain review-first.
 
-## Multi-device memory
+## Container runtime
 
-Run one authoritative Hindsight server on an always-on machine and bind it to a specific **private overlay address**.
-
-You can auto-detect common overlay clients:
-
-```bash
-python scripts/private_network.py
-```
-
-The helper currently recognizes:
+The bootstrap prefers:
 
 ```text
-NetBird                 netbird status --ipv4
-Tailscale / Headscale   tailscale ip -4
+Podman Compose
+      ↓ fallback
+Docker Compose
 ```
 
-Netmaker/plain WireGuard can use a manually selected private interface address.
-
-Then run:
-
-```bash
-./install.sh --role server --bind-address 100.100.20.30
-```
-
-Configure another Hermes instance as a client:
-
-```bash
-./install.sh \
-  --role client \
-  --hindsight-url http://100.100.20.30:8888 \
-  --searxng-url http://100.100.20.30:8088
-```
-
-The default `bank_id_template: hermes-{profile}` lets the same profile share memory across devices while keeping `coder`, `researcher`, `operator`, and personal profiles isolated. See [docs/MEMORY-SYNC.md](docs/MEMORY-SYNC.md), [docs/PRIVATE-NETWORKING.md](docs/PRIVATE-NETWORKING.md), and [docs/TAILSCALE.md](docs/TAILSCALE.md).
-
-### Which overlay?
-
-For this project's privacy-first goals:
-
-- **NetBird self-hosted** — best complete self-hosted option if you are willing to operate its public coordination endpoint.
-- **Headscale** — lean self-hosted control plane with standard Tailscale clients; excellent for a personal/small network.
-- **Tailscale** — simplest operational experience, but managed control plane.
-- **Plain WireGuard** — smallest moving parts for a fixed set of machines.
-- **Netmaker** — useful for more traditional WireGuard/site-to-site/gateway topologies.
-
-The Hermes services themselves should remain reachable **only over the chosen overlay**, not through the public control-plane endpoint.
+Podman is preferred because it keeps the strict-free baseline independent of Docker Desktop licensing. Existing Docker Engine users can continue using Docker Compose.
 
 ## Backup / restore
 
-Sanitized config backup:
-
-```bash
-python scripts/backup.py
-```
-
-Logical Hindsight memory backup:
-
-```bash
-python scripts/backup.py --bank hermes-default
-```
-
-Full Hermes backup (contains credentials; encrypt it):
-
-```bash
-python scripts/backup.py --mode full
-```
-
-Restore tooling is documented in [docs/BACKUP-RESTORE.md](docs/BACKUP-RESTORE.md). Optional rclone-copy support requires explicit confirmation that the destination is an encrypted `crypt` remote.
-
-Nango database backup/restore is tracked separately because an encrypted Nango database must be restored together with its matching `NANGO_ENCRYPTION_KEY`.
-
-## Safe updates
-
-```bash
-python scripts/update.py --check
-python scripts/update.py
-```
-
-The updater refuses dirty checkouts, takes a Hermes quick backup, validates before/after, and rolls the repo back if post-update checks fail. Service images and Hermes itself update only when explicitly requested. See [docs/UPGRADE.md](docs/UPGRADE.md).
-
-## Repository map
+The v2 target is:
 
 ```text
-.
-├── install.sh / install.ps1         # bootstrap entrypoints
-├── bootstrap.py                     # cross-platform privacy wizard
-├── ROADMAP.md                       # living implementation tracker
-├── stack/compose.yml                # local + optional service profiles
-├── presets/                         # install/security presets
-├── profile/                         # base Hermes distribution template
-├── templates/profiles/              # role-specific SOUL bundles
-├── skills/                          # local reviewed skills
-├── catalog/                         # MCP/skill/service catalog
-├── scripts/                         # doctor, backup, restore, profiles, network/integration helpers
-├── docs/                            # operational/security documentation
-├── site/                            # zero-tracking interactive Pages site
-└── .github/                         # CI, Pages, issue/PR privacy templates
+logical/service-safe export
+        ↓
+local staging bundle
+        ↓
+restic encrypted snapshots
+        ↓
+NAS / second machine / removable disk
 ```
 
-## Start here
-
-1. [Quick start](docs/QUICKSTART.md)
-2. [Architecture](docs/ARCHITECTURE.md)
-3. [Privacy principles](docs/PRIVACY.md) · [Threat model](docs/THREAT-MODEL.md)
-4. [Profiles](docs/PROFILES.md)
-5. [Memory sync](docs/MEMORY-SYNC.md) · [Private networking](docs/PRIVATE-NETWORKING.md) · [Tailscale/Headscale notes](docs/TAILSCALE.md)
-6. [Nango Auth + Proxy](docs/NANGO.md) · [Services](docs/SERVICES.md)
-7. [Backup / restore](docs/BACKUP-RESTORE.md) · [Upgrade](docs/UPGRADE.md) · [Uninstall](docs/UNINSTALL.md)
-8. [MCP policy/catalog](docs/MCP.md) · [Skills](docs/SKILLS.md)
-9. [Windows](docs/WINDOWS.md) · [macOS](docs/MACOS.md) · [Linux](docs/LINUX.md)
-10. [GitHub Pages](docs/PAGES.md)
+Do not copy a live mcp-memory-service SQLite database between machines. Backup tooling is being migrated from the old Hindsight workflow; see [docs/BACKUP-RESTORE.md](docs/BACKUP-RESTORE.md) and `ROADMAP.md` for current status.
 
 ## Diagnostics
 
@@ -276,27 +237,62 @@ The updater refuses dirty checkouts, takes a Hermes quick backup, validates befo
 python scripts/doctor.py
 ```
 
-For a sanitized support bundle:
+Sanitized machine-readable output:
 
 ```bash
 python scripts/doctor.py --json --redact
 ```
 
-CI runs bootstrap/private-network/Nango privacy invariants, profile-bank checks, twice-run idempotency and profile-bundle discovery on Windows, macOS and Linux.
+## Repository map
+
+```text
+.
+├── install.sh / install.ps1
+├── bootstrap.py
+├── ROADMAP.md
+├── stack/compose.yml
+├── presets/
+├── profile/
+├── templates/profiles/
+├── skills/
+├── catalog/
+├── scripts/
+├── docs/
+├── site/
+└── .github/
+```
+
+## Start here
+
+1. [Quick start](docs/QUICKSTART.md)
+2. [Strict-free policy](docs/STRICT-FREE.md)
+3. [Architecture](docs/ARCHITECTURE.md)
+4. [Models](docs/MODELS.md)
+5. [Privacy](docs/PRIVACY.md) · [Threat model](docs/THREAT-MODEL.md)
+6. [Memory sync](docs/MEMORY-SYNC.md)
+7. [Private networking](docs/PRIVATE-NETWORKING.md) · [Headscale](docs/HEADSCALE.md)
+8. [Services](docs/SERVICES.md) · [MCP](docs/MCP.md) · [Skills](docs/SKILLS.md)
+9. [Profiles](docs/PROFILES.md)
+10. [Backup / restore](docs/BACKUP-RESTORE.md)
 
 ## Upstream projects
 
-- Hermes: https://hermes-agent.nousresearch.com/docs/
-- Hindsight: https://hindsight.vectorize.io/
-- SearXNG: https://docs.searxng.org/
-- Docling: https://docling-project.github.io/docling/
-- Activepieces: https://www.activepieces.com/docs/
-- Nango: https://nango.dev/docs/
-- NetBird: https://docs.netbird.io/
-- Headscale: https://headscale.net/
-- OpenViking: https://docs.openviking.ai/
-- Firecrawl: https://github.com/firecrawl/firecrawl/blob/main/SELF_HOST.md
+- Hermes Agent — https://github.com/NousResearch/hermes-agent
+- llama.cpp — https://github.com/ggml-org/llama.cpp
+- mcp-memory-service — https://github.com/doobidoo/mcp-memory-service
+- SearXNG — https://github.com/searxng/searxng
+- Docling — https://github.com/docling-project/docling
+- Crawl4AI — https://github.com/unclecode/crawl4ai
+- Node-RED — https://github.com/node-red/node-red
+- Forgejo — https://codeberg.org/forgejo/forgejo
+- Playwright MCP — https://github.com/microsoft/playwright-mcp
+- Headscale — https://github.com/juanfont/headscale
+- Authelia — https://github.com/authelia/authelia
+- Caddy — https://github.com/caddyserver/caddy
+- Syncthing — https://github.com/syncthing/syncthing
+- restic — https://github.com/restic/restic
+- Podman — https://github.com/containers/podman
 
 ## Security
 
-Read [SECURITY.md](SECURITY.md). Treat every MCP server, skill, browser target, credential broker and automation connector as executable authority. Prefer fewer tools, fewer scopes, fewer listening ports, and fail-closed behavior.
+Read [SECURITY.md](SECURITY.md). Treat every MCP server, browser target, workflow and skill as executable authority. Prefer fewer tools, smaller scopes, private bindings and fail-closed behavior.
