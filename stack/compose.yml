@@ -1,61 +1,29 @@
 name: hermes-privacy-stack
 
-# Runtime variables are written outside the Git checkout by bootstrap.py/setup scripts:
-#   HPS_BIND_ADDRESS                      loopback or a private/overlay IP (never 0.0.0.0)
-#   HPS_SEARXNG_CONFIG_DIR                runtime-only config with a generated secret
-#   HPS_HINDSIGHT_MODEL                   auxiliary local model
-#   HPS_HINDSIGHT_AUTO_CONSOLIDATION      true by default; CI/bulk workflows may opt out
-#   HPS_NANGO_*                           generated Nango secrets/URLs; never commit real values
-#
-# Manual users can pass a private env file:
-#   docker compose --env-file /path/to/stack.env -f stack/compose.yml --profile core up -d
+# Strict-free runtime: every service below is self-hosted and usable without a
+# paid feature tier or license key. Runtime secrets/config are generated outside Git.
+# Compatible with Docker Compose and Podman Compose.
 
 services:
-  ollama:
+  memory:
     profiles: ["core"]
-    image: ${HPS_OLLAMA_IMAGE:-ollama/ollama:latest}
+    image: ${HPS_MEMORY_IMAGE:-ghcr.io/doobidoo/mcp-memory-service:latest}
     restart: unless-stopped
-    volumes:
-      - ollama_data:/root/.ollama
-    networks: [private]
-
-  ollama-init:
-    profiles: ["core"]
-    image: ${HPS_CURL_IMAGE:-curlimages/curl:latest}
-    depends_on:
-      - ollama
-    restart: "no"
     environment:
-      MODEL: ${HPS_HINDSIGHT_MODEL:-qwen3.5:4b}
-    networks: [private]
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - >-
-        until curl -fsS http://ollama:11434/api/tags >/dev/null; do sleep 2; done;
-        curl -fsS http://ollama:11434/api/pull
-        -H 'Content-Type: application/json'
-        -d "{\"name\":\"$$MODEL\",\"stream\":false}"
-
-  hindsight:
-    profiles: ["core"]
-    image: ${HPS_HINDSIGHT_IMAGE:-ghcr.io/vectorize-io/hindsight:latest}
-    restart: unless-stopped
-    shm_size: 1gb
-    depends_on:
-      - ollama
-    environment:
-      HINDSIGHT_API_LLM_PROVIDER: ollama
-      HINDSIGHT_API_LLM_MODEL: ${HPS_HINDSIGHT_MODEL:-qwen3.5:4b}
-      HINDSIGHT_API_LLM_BASE_URL: http://ollama:11434/v1
-      HINDSIGHT_API_LLM_MAX_CONCURRENT: ${HPS_HINDSIGHT_LLM_MAX_CONCURRENT:-2}
-      HINDSIGHT_API_LLM_TIMEOUT: ${HPS_HINDSIGHT_LLM_TIMEOUT:-300}
-      HINDSIGHT_API_ENABLE_AUTO_CONSOLIDATION: ${HPS_HINDSIGHT_AUTO_CONSOLIDATION:-true}
-      HINDSIGHT_API_WORKER_ID: hermes-privacy-stack
+      MCP_MODE: streamable-http
+      MCP_STREAMABLE_HTTP_MODE: "1"
+      MCP_SSE_HOST: 0.0.0.0
+      MCP_SSE_PORT: "8765"
+      MCP_API_KEY: ${HPS_MEMORY_API_KEY:?Run bootstrap.py first}
+      MCP_MEMORY_STORAGE_BACKEND: sqlite_vec
+      MCP_MEMORY_SQLITE_PATH: /app/data/sqlite_vec.db
+      MCP_MEMORY_BACKUPS_PATH: /app/data/backups
+      MCP_ALLOW_ANONYMOUS_ACCESS: "false"
+      LOG_LEVEL: INFO
     ports:
-      - "${HPS_BIND_ADDRESS:-127.0.0.1}:8888:8888"
-      - "${HPS_BIND_ADDRESS:-127.0.0.1}:9999:9999"
+      - "${HPS_BIND_ADDRESS:-127.0.0.1}:8765:8765"
     volumes:
-      - hindsight_data:/home/hindsight/.pg0
+      - memory_data:/app/data
     networks: [private]
 
   searxng:
@@ -77,73 +45,61 @@ services:
       - "${HPS_BIND_ADDRESS:-127.0.0.1}:5001:5001"
     networks: [private]
 
-  activepieces:
+  llama-cpp:
+    profiles: ["local-model"]
+    image: ${HPS_LLAMA_IMAGE:-ghcr.io/ggml-org/llama.cpp:server}
+    restart: unless-stopped
+    command:
+      - -m
+      - /models/${HPS_LLAMA_MODEL_FILE:?Choose a local GGUF model during setup}
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --ctx-size
+      - "65536"
+      - --n-gpu-layers
+      - ${HPS_LLAMA_GPU_LAYERS:-0}
+    ports:
+      - "${HPS_BIND_ADDRESS:-127.0.0.1}:8080:8080"
+    volumes:
+      - "${HPS_LLAMA_MODEL_DIR:?Choose a local GGUF model during setup}:/models:ro"
+    networks: [private]
+
+  crawl4ai:
+    profiles: ["research"]
+    image: ${HPS_CRAWL4AI_IMAGE:-unclecode/crawl4ai:0.8.6}
+    restart: unless-stopped
+    shm_size: 1gb
+    ports:
+      - "${HPS_BIND_ADDRESS:-127.0.0.1}:11235:11235"
+    networks: [private]
+
+  node-red:
     profiles: ["automation"]
-    image: ${HPS_ACTIVEPIECES_IMAGE:-activepieces/activepieces:latest}
+    image: ${HPS_NODERED_IMAGE:-nodered/node-red:4.1.10}
     restart: unless-stopped
     environment:
-      AP_DB_TYPE: PGLITE
-      AP_REDIS_TYPE: MEMORY
-      AP_FRONTEND_URL: ${HPS_ACTIVEPIECES_URL:-http://localhost:8090}
+      NODE_RED_CREDENTIAL_SECRET: ${HPS_NODERED_CREDENTIAL_SECRET:?Run bootstrap.py first}
+      NODE_RED_ENABLE_PROJECTS: "true"
     ports:
-      - "${HPS_BIND_ADDRESS:-127.0.0.1}:8090:80"
+      - "${HPS_BIND_ADDRESS:-127.0.0.1}:1880:1880"
     volumes:
-      - activepieces_data:/root/.activepieces
+      - node_red_data:/data
     networks: [private]
 
-  nango-db:
-    profiles: ["nango"]
-    image: ${HPS_NANGO_POSTGRES_IMAGE:-postgres:16.0-alpine}
+  forgejo:
+    profiles: ["git"]
+    image: ${HPS_FORGEJO_IMAGE:-codeberg.org/forgejo/forgejo:15.0.8}
     restart: unless-stopped
     environment:
-      POSTGRES_USER: nango
-      POSTGRES_DB: nango
-      POSTGRES_PASSWORD: ${HPS_NANGO_DB_PASSWORD:?Run scripts/setup_nango.py first}
-    volumes:
-      - nango_db_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U nango -d nango"]
-      interval: 5s
-      timeout: 5s
-      retries: 12
-    networks: [private]
-
-  nango:
-    profiles: ["nango"]
-    image: ${HPS_NANGO_IMAGE:-nangohq/nango-server:hosted}
-    platform: ${HPS_NANGO_PLATFORM:-linux/amd64}
-    restart: unless-stopped
-    depends_on:
-      nango-db:
-        condition: service_healthy
-    environment:
-      NANGO_ENCRYPTION_KEY: ${HPS_NANGO_ENCRYPTION_KEY:?Run scripts/setup_nango.py first}
-      NANGO_DB_USER: nango
-      NANGO_DB_PASSWORD: ${HPS_NANGO_DB_PASSWORD:?Run scripts/setup_nango.py first}
-      NANGO_DB_HOST: nango-db
-      NANGO_DB_NAME: nango
-      NANGO_DB_SSL: "false"
-      RECORDS_DATABASE_URL: postgresql://nango:${HPS_NANGO_DB_PASSWORD:?Run scripts/setup_nango.py first}@nango-db:5432/nango
-      SERVER_PORT: "3003"
-      NANGO_SERVER_URL: ${HPS_NANGO_SERVER_URL:-http://localhost:3003}
-      NANGO_PUBLIC_SERVER_URL: ${HPS_NANGO_SERVER_URL:-http://localhost:3003}
-      NANGO_DASHBOARD_API_URL: /
-      FLAG_AUTH_ENABLED: "false"
-      NANGO_DASHBOARD_USERNAME: ${HPS_NANGO_DASHBOARD_USERNAME:-hps-admin}
-      NANGO_DASHBOARD_PASSWORD: ${HPS_NANGO_DASHBOARD_PASSWORD:?Run scripts/setup_nango.py first}
-      FLAG_SERVE_CONNECT_UI: "true"
-      NANGO_CONNECT_UI_PORT: "3009"
-      NANGO_PUBLIC_CONNECT_URL: ${HPS_NANGO_CONNECT_URL:-http://localhost:3009}
-      NANGO_LOGS_ENABLED: "false"
-      NANGO_TELEMETRY_SDK: "false"
-      TELEMETRY: "false"
-      LOG_LEVEL: info
-      NANGO_PROXY_BASE_URL_OVERRIDE_ENABLED: "true"
-      NANGO_PROXY_BASE_URL_OVERRIDE_DENYLIST: '["169.254.169.254","metadata.google.internal","localhost","127.0.0.1","[::1]","[::ffff:127.0.0.1]","[::ffff:169.254.169.254]"]'
-      NANGO_OUTBOUND_URL_POLICY: '{"blockPrivateIps":true,"maxRedirects":3}'
+      USER_UID: "1000"
+      USER_GID: "1000"
     ports:
-      - "${HPS_BIND_ADDRESS:-127.0.0.1}:3003:3003"
-      - "${HPS_BIND_ADDRESS:-127.0.0.1}:3009:3009"
+      - "${HPS_BIND_ADDRESS:-127.0.0.1}:3000:3000"
+      - "${HPS_BIND_ADDRESS:-127.0.0.1}:2222:22"
+    volumes:
+      - forgejo_data:/data
     networks: [private]
 
 networks:
@@ -151,8 +107,7 @@ networks:
     driver: bridge
 
 volumes:
-  ollama_data:
-  hindsight_data:
+  memory_data:
   searxng_data:
-  activepieces_data:
-  nango_db_data:
+  node_red_data:
+  forgejo_data:
