@@ -1,42 +1,77 @@
 # Architecture
 
-The stack separates six trust domains:
+Hermes Privacy Stack v2 separates the system into small trust domains and deliberately avoids commercial/open-core service dependencies.
 
-1. **Reasoning** — Hermes + Codex OAuth.
-2. **Durable personal/project memory** — Hindsight.
-3. **Knowledge/context** — files, Obsidian and optionally OpenViking.
-4. **External tools/workflows** — MCP / Activepieces / browser.
-5. **Credential boundary** — optionally Nango Free Self-Hosted for OAuth/API credentials and authenticated proxying.
-6. **Backup transport** — encrypted archives copied to cloud storage.
+## Trust domains
 
-Keeping these separate prevents a convenience feature such as Drive sync from becoming the storage engine for live memory databases, and prevents a general-purpose agent from needing direct access to every provider refresh token.
+1. **Agent** — Hermes Agent.
+2. **Inference** — local llama.cpp by default; optional external ChatGPT/Codex OAuth.
+3. **Durable semantic memory** — mcp-memory-service over authenticated MCP.
+4. **Research/context** — SearXNG, Crawl4AI, Docling and later Playwright MCP.
+5. **Automation** — Node-RED, optional and higher authority.
+6. **Git/config** — Forgejo plus local Git; GitHub may be an optional mirror.
+7. **Private transport** — Headscale or WireGuard/wg-easy.
+8. **Edge authentication** — planned Caddy + Authelia.
+9. **Backup/sync** — restic for backups; Syncthing only for ordinary non-database files.
 
-## Roles
+## Local topology
 
-### Local
-All core services run on the same computer and bind to loopback. Optional Nango binds its API/dashboard and Connect UI to loopback as well; its Postgres service remains Docker-private.
+```text
+Hermes
+  ├── MCP ── mcp-memory-service ── SQLite-vec
+  ├── web ── SearXNG
+  ├── docs ── Docling
+  ├── crawl ── Crawl4AI (optional)
+  ├── flows ── Node-RED (optional)
+  ├── git ── Forgejo (optional)
+  └── model
+       ├── llama.cpp (local default)
+       └── ChatGPT/Codex OAuth (optional external provider)
+```
 
-### Server
-Core services run on an always-on trusted machine. Clients reach them only through a private network. Do not bind service ports to `0.0.0.0` merely to make them reachable.
+Local services bind to `127.0.0.1` unless server mode is explicitly given a private address.
 
-If Nango is hosted here, its private administration endpoint can stay on the overlay while a narrowly scoped HTTPS ingress is used only when an OAuth provider requires a public callback URL. That does **not** justify exposing Hindsight, SearXNG or Docling publicly.
+## Multi-device topology
 
-### Client
-Hermes runs locally. Hindsight/Search/knowledge endpoints point to a private server. Model OAuth remains local to that client. A client can also use a remote Nango proxy endpoint without storing the external provider's refresh token itself.
+```text
+               Headscale / WireGuard
+                         │
+          ┌──────────────┼──────────────┐
+          │              │              │
+       desktop         laptop        workstation
+        Hermes          Hermes          Hermes
+          │              │              │
+          └──────────────┼──────────────┘
+                         │
+                 always-on host
+                  ├── memory:8765
+                  ├── search:8088
+                  └── docling:5001
+```
 
-## Integration split
+Clients can use different model providers while sharing the same private memory/search services.
 
-### Activepieces
-Use for visual/no-code workflows, connectors and application automation.
+## Why memory is MCP rather than a Hermes-specific provider
 
-### Nango Free Self-Hosted
-Use for Auth + Proxy: OAuth/API-key connections, refresh-token handling, encrypted credential storage and authenticated requests to provider APIs.
+The previous architecture coupled long-term memory to Hindsight. v2 instead uses mcp-memory-service because it is an ordinary authenticated MCP service with SQLite-based storage. This makes memory usable by Hermes without coupling the whole stack to a dedicated commercial/open-core memory platform.
 
-The free self-hosted edition does not provide Nango's full functions/webhooks/MCP runtime. Hermes Privacy Stack therefore integrates it through a local least-authority proxy helper rather than assuming paid features.
+Hermes' built-in `MEMORY.md` / `USER.md` facilities remain available. The shared MCP is for cross-device semantic memory and should be treated as a separate authority.
 
-### Hermes MCP / skills
-Use as the agent-facing capability layer. Prefer narrow MCP tool surfaces and reviewed skills that call either direct local services or a credential boundary such as Nango.
+## Container boundary
 
-## Why Hindsight + OpenViking are not both primary memory
+Podman Compose is preferred. Docker Compose is supported as a compatibility fallback.
 
-Hermes supports one external memory provider at a time. Hindsight is the default primary memory because it is designed for learned long-term memory. OpenViking is optional as a context/knowledge service exposed through MCP/API instead of competing for the memory-provider slot.
+Container networking is private by default. A service that needs remote access is published only on an exact private address selected by the operator. Container-internal `0.0.0.0` listeners are acceptable when the host publication is restricted to loopback/private IPs.
+
+## Optional services are not implicit authority
+
+Enabling a Compose profile does not mean Hermes automatically receives unlimited access to it. MCP/tool configuration remains a separate review step. In particular:
+
+- Node-RED is higher authority because flows can modify external systems.
+- Forgejo write access should be separated from read access.
+- Playwright MCP should use isolated browser state.
+- memory deletion should require explicit user intent.
+
+## Planned edge layer
+
+Caddy + Authelia will provide a self-hosted TLS/SSO boundary for browser-facing services. They are intentionally not auto-started yet because domain names, certificates, trusted networks and identity policy must be supplied explicitly rather than guessed by the installer.
