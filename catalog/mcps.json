@@ -1,68 +1,58 @@
 [
   {
-    "id": "activepieces",
-    "name": "Activepieces",
-    "default": false,
-    "risk": "high",
-    "transport": "http",
-    "purpose": "OAuth-backed SaaS integrations and workflows",
-    "url": "http://127.0.0.1:8090/mcp",
-    "notes": "Enable only after configuring connections; restrict exposed tools."
+    "id":"memory",
+    "name":"mcp-memory-service",
+    "status":"implemented",
+    "default":true,
+    "strict_free":true,
+    "risk":"medium",
+    "transport":"streamable-http",
+    "url":"http://127.0.0.1:8765/mcp",
+    "purpose":"shared semantic memory",
+    "notes":"Authenticated with generated API key. Restrict delete/consolidation tools to explicit user intent."
   },
   {
-    "id": "openviking",
-    "name": "OpenViking",
-    "default": false,
-    "risk": "medium",
-    "transport": "http",
-    "purpose": "Persistent context/knowledge filesystem",
-    "url": "http://127.0.0.1:1933",
-    "notes": "Keep on localhost/tailnet. Review MCP path/version upstream."
+    "id":"playwright",
+    "name":"Microsoft Playwright MCP",
+    "status":"planned-pin",
+    "default":false,
+    "strict_free":true,
+    "risk":"high",
+    "transport":"stdio/http",
+    "purpose":"interactive local browser automation",
+    "notes":"Use isolated browser state and a pinned reviewed package version; do not mount a personal browser profile by default."
   },
   {
-    "id": "docling",
-    "name": "Docling",
-    "default": false,
-    "risk": "low",
-    "transport": "http",
-    "purpose": "Local document conversion/extraction",
-    "url": "http://127.0.0.1:5001",
-    "notes": "Prefer read/convert operations; do not expose publicly."
+    "id":"docling-mcp",
+    "name":"Docling MCP",
+    "status":"planned-pin",
+    "default":false,
+    "strict_free":true,
+    "risk":"low",
+    "transport":"stdio/http",
+    "purpose":"local document conversion/extraction",
+    "notes":"Keep source files and service private; prefer read/convert operations."
   },
   {
-    "id": "markitdown",
-    "name": "MarkItDown MCP",
-    "default": false,
-    "risk": "medium",
-    "transport": "stdio",
-    "purpose": "Lightweight file/URL to Markdown conversion",
-    "notes": "Scope filesystem paths."
+    "id":"filesystem",
+    "name":"Filesystem MCP",
+    "status":"optional-review",
+    "default":false,
+    "strict_free":true,
+    "risk":"high",
+    "transport":"stdio",
+    "purpose":"restricted filesystem access",
+    "notes":"Usually redundant with Hermes. If enabled, allowlist the narrowest possible directory."
   },
   {
-    "id": "filesystem",
-    "name": "Filesystem MCP",
-    "default": false,
-    "risk": "high",
-    "transport": "stdio",
-    "purpose": "Direct filesystem access",
-    "notes": "Usually redundant with Hermes; if used, allowlist a narrow directory."
-  },
-  {
-    "id": "github",
-    "name": "GitHub MCP",
-    "default": false,
-    "risk": "high",
-    "transport": "http/stdio",
-    "purpose": "Repository operations",
-    "notes": "Prefer read-only token/profile first; separate write-authority profile."
-  },
-  {
-    "id": "toolhive",
-    "name": "ToolHive",
-    "default": false,
-    "risk": "medium",
-    "transport": "gateway",
-    "purpose": "MCP isolation/policy/aggregation",
-    "notes": "Add when MCP surface becomes large."
+    "id":"git",
+    "name":"Local Git MCP / Git tooling",
+    "status":"optional-review",
+    "default":false,
+    "strict_free":true,
+    "risk":"high",
+    "transport":"stdio",
+    "purpose":"local/Forgejo repository operations",
+    "notes":"Separate read-only inspection from write/push authority; scope repositories explicitly."
   }
 ]
