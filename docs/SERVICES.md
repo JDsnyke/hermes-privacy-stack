@@ -1,119 +1,161 @@
 # Services
 
-The service list is intentionally smaller than a typical "AI stack." A service is added only when it provides capability Hermes cannot already supply cleanly.
+Only strict-free supported runtime services are listed here. A supported service must be self-hostable and fully usable for its assigned role without paid feature unlocks.
 
-## Core profile
+## Core
 
-### Hindsight — memory
+### mcp-memory-service
 
-- Host port: `8888` API, `9999` UI
-- Role: primary long-term agent memory
-- In local mode: bound to `127.0.0.1`
-- In server mode: bound to one explicit private/overlay IP
-- Data: sensitive; never expose publicly or sync its live database files
+Purpose: shared semantic memory across Hermes clients.
 
-Hermes clients share it through the API using `bank_id_template: hermes-{profile}`.
-
-### Ollama — auxiliary inference
-
-- Host port: **none**
-- Role: background Hindsight inference/extraction
-- Network: Compose-private only
-- Default model: `qwen3.5:4b` unless `HPS_HINDSIGHT_MODEL` overrides it
-
-The frontier/Codex model remains responsible for primary agent reasoning; Ollama handles cheaper local background memory work.
-
-### SearXNG — private metasearch
-
-- Host port: `8088`
-- Role: Hermes web-search backend
-- Runtime secret: generated outside Git on first install
-- Hermes behavior: `web.search_backend=searxng`, keyless fallback/rescue disabled
-
-The container itself listens on `0.0.0.0:8080` **inside its isolated Docker network**; Docker publishes it only to the host IP selected by the installer.
-
-### Docling — document processing
-
-- Host port: `5001`
-- Role: local PDF/Office/document parsing and structured extraction
-- Required? No; core profile currently starts it, but it can be removed on constrained systems
-
-## Optional current profiles
-
-### Activepieces — application automation
-
-- Compose profile: `automation`
-- Host port: `8090`
-- Role: self-hosted Composio/Zapier-style connector/workflow layer
-- Default topology: PGLite + in-memory queue for one personal machine
-- Sensitivity: high; OAuth connections stored here can authorize external accounts
-
-Enable explicitly with `--enable-activepieces` or the install prompt. Do not treat this lightweight topology as a multi-node production deployment.
-
-### Nango Free Self-Hosted — credential boundary + API proxy
-
-- Compose profile: `nango`
-- Host ports: `3003` API/dashboard, `3009` Connect UI
-- Database: Postgres on the Compose-private network; no host DB port
-- Role: OAuth/API-key connection management, token refresh, encrypted credential storage and authenticated API proxy
-- Sensitivity: very high; it stores credentials capable of reaching external accounts
-- License: Elastic License 2.0
-- Free self-host feature boundary: **Auth + Proxy**, not the full Nango runtime
-
-Enable from guided setup or run:
-
-```bash
-python scripts/setup_nango.py
+```text
+profile: core
+host port: 8765
+storage: SQLite-vec in a persistent volume
+auth: generated API key
 ```
 
-The setup helper generates Nango's encryption key, DB password and dashboard password outside Git, enables SSRF protections, disables optional telemetry/log storage, and preserves existing secrets on rerun.
+Hermes connects through Streamable HTTP MCP. The database is authoritative on one server; clients never synchronize its live files.
 
-Nango is an alternative to Composio for the **auth/proxy** layer. It does not replace Activepieces' workflow builder. Nango Cloud / Enterprise features such as functions, webhooks and managed MCP are deliberately not assumed by this free self-host profile.
+### SearXNG
 
-Because the free edition has no managed Nango MCP server, Hermes Privacy Stack includes `scripts/nango_proxy.py` and the reviewed `nango-proxy` skill. Read methods are allowed by default; write methods require an explicit `--allow-write` gate.
+Purpose: private search discovery.
 
-See [NANGO.md](NANGO.md).
+```text
+profile: core
+host port: 8088
+```
 
-## Staged / not auto-installed
+Hermes is configured to use SearXNG explicitly and fail closed rather than silently using anonymous external search fallback.
 
-### OpenViking
+### Docling Serve
 
-Useful for a persistent context/knowledge filesystem and MCP, but **not currently started automatically**. Network deployment needs a genuine root API key and model configuration. The previous unauthenticated shortcut was intentionally removed during hardening.
+Purpose: local PDF/document parsing and conversion.
 
-Planned implementation will:
+```text
+profile: core
+host port: 5001
+```
 
-1. generate/store the root key outside Git,
-2. require explicit model/embedding choices,
-3. bind locally/private only,
-4. register MCP with a narrow tool surface,
-5. document backup/sync separately from Hindsight.
+Keep document processing local unless the user explicitly chooses another path.
 
-### Firecrawl
+## Optional local model
 
-Not bundled in core Compose because the current self-hosted deployment is a heavier multi-service stack. It will be installed from a pinned upstream release only when broad crawling is requested.
+### llama.cpp
+
+Purpose: local OpenAI-compatible model server.
+
+```text
+profile: local-model
+host port: 8080
+model: user-selected GGUF
+context: 65536
+```
+
+No model is downloaded automatically. The selected model directory is mounted read-only.
+
+ChatGPT/Codex OAuth remains a separate optional Hermes model path and does not require this service.
+
+## Research
 
 ### Crawl4AI
 
-Planned lighter crawling alternative/companion. Useful where an agent needs browser-aware extraction but Firecrawl's full stack is unnecessary.
+Purpose: local crawling and clean-content extraction.
 
-### MarkItDown MCP
+```text
+profile: research
+host port: 11235
+```
 
-Planned lightweight conversion path for simple Office/PDF/URL-to-Markdown jobs. Docling remains the preferred complex-document parser.
+Recommended routing:
 
-### ToolHive
+```text
+SearXNG -> find candidate URLs
+Crawl4AI -> extract ordinary pages
+Playwright MCP -> interactive/browser-required sites
+Docling -> PDFs/documents
+```
 
-Planned only when the number/authority of MCP servers justifies a dedicated isolation/policy gateway. Adding it to a small stack would increase complexity without enough benefit.
+Playwright MCP is planned but not yet automatically configured.
 
-### Windmill
+## Automation
 
-Planned optional code/workflow execution layer for reusable Python/TypeScript/Go/SQL jobs that are too structured for ordinary Hermes cron/skills.
+### Node-RED
 
-### Langfuse
+Purpose: workflows, webhooks, APIs and external-service integration.
 
-Optional future observability. Disabled by default because traces themselves may contain sensitive prompts/tool data.
+```text
+profile: automation
+host port: 1880
+credential encryption: generated NODE_RED_CREDENTIAL_SECRET
+```
 
-## Image versions
+Node-RED is a high-authority surface. Restrict editor access to operator/admin devices and do not expose it publicly by default.
 
-The development channel currently defaults to upstream mutable images but exposes environment overrides in `stack/stack.env.example`. The supply-chain workflow resolves every audited Compose image—including the optional Nango/Postgres images—to immutable digests for release evidence.
+The v2 architecture uses Node-RED plus native MCP/API clients instead of Nango, Activepieces, Windmill or Composio-style platform dependencies.
 
-**Stable releases must use reviewed/tested versions or digests before v1.0.** Updating the Git repository does not automatically pull service images unless `scripts/update.py --services` is explicitly used.
+## Git
+
+### Forgejo
+
+Purpose: canonical self-hosted Git/config repository.
+
+```text
+profile: git
+HTTP: 3000
+SSH: 2222
+```
+
+The current profile is intentionally simple. Registration hardening, authentication and reverse-proxy integration remain roadmap items.
+
+GitHub can remain an optional mirror/development host; it is not required by the runtime architecture.
+
+## External infrastructure planned around the stack
+
+These are strict-free projects but are not yet auto-provisioned by the Compose file because they need deployment-specific inputs.
+
+### Headscale
+
+Self-hosted private-mesh coordination. Clients use compatible Tailscale client software against your Headscale control plane.
+
+### WireGuard / wg-easy
+
+Simpler private network for static/small deployments.
+
+### Caddy
+
+Reverse proxy/TLS edge. Will be used for explicitly selected browser-facing services.
+
+### Authelia
+
+SSO/MFA/access policy in front of Caddy-managed services.
+
+### Syncthing
+
+Peer-to-peer sync for ordinary documents/Obsidian/config exports only. Never synchronize live databases.
+
+### restic
+
+Encrypted, deduplicated backups to local/NAS/SFTP/object destinations. Becoming the default backup backend.
+
+### Podman
+
+Preferred container runtime. Docker Compose remains supported for compatibility.
+
+## Removed services
+
+The previous architecture contained or planned:
+
+```text
+Hindsight
+Ollama
+Nango
+Activepieces
+Windmill
+NetBird
+Firecrawl
+ToolHive
+OpenViking
+```
+
+They are no longer supported profiles under the strict-free rule. See [STRICT-FREE.md](STRICT-FREE.md).
