@@ -1,10 +1,17 @@
 [
-  {"name":"Hermes","required":true,"host":"local","data":"~/.hermes","privacy":"local profile + selected providers"},
-  {"name":"Hindsight","required":true,"host":"localhost/tailnet","ports":[8888,9999],"data":"Docker volume","privacy":"authoritative long-term memory"},
-  {"name":"Ollama","required":true,"host":"container-network-only","ports":[],"data":"Docker volume","privacy":"auxiliary inference"},
-  {"name":"SearXNG","required":true,"host":"127.0.0.1","ports":[8088],"data":"cache only","privacy":"search aggregation"},
-  {"name":"Docling","required":false,"host":"127.0.0.1","ports":[5001],"data":"ephemeral unless configured","privacy":"document parsing"},
-  {"name":"Activepieces","required":false,"host":"127.0.0.1","ports":[8090],"data":"Docker volume","privacy":"OAuth connections are sensitive"},
-  {"name":"OpenViking","required":false,"host":"127.0.0.1","ports":[1933],"data":"Docker volume","privacy":"knowledge/context can be sensitive"},
-  {"name":"Firecrawl","required":false,"host":"127.0.0.1","ports":[3002],"data":"multiple services","privacy":"crawler; heavy optional service"}
+  {"id":"hermes","name":"Hermes Agent","status":"core","required":true,"host":"local","ports":[],"data":"Hermes home","strict_free":true,"purpose":"agent orchestration"},
+  {"id":"memory","name":"mcp-memory-service","status":"core","required":true,"host":"loopback/private","ports":[8765],"data":"SQLite-vec persistent volume","strict_free":true,"purpose":"authenticated shared semantic memory"},
+  {"id":"searxng","name":"SearXNG","status":"core","required":true,"host":"loopback/private","ports":[8088],"data":"cache + generated config","strict_free":true,"purpose":"private metasearch"},
+  {"id":"docling","name":"Docling Serve","status":"core","required":true,"host":"loopback/private","ports":[5001],"data":"ephemeral unless configured","strict_free":true,"purpose":"local document/PDF parsing"},
+  {"id":"llama-cpp","name":"llama.cpp","status":"optional","required":false,"profile":"local-model","host":"loopback/private","ports":[8080],"data":"user-selected read-only GGUF directory","strict_free":true,"purpose":"local OpenAI-compatible inference"},
+  {"id":"crawl4ai","name":"Crawl4AI","status":"optional","required":false,"profile":"research","host":"loopback/private","ports":[11235],"data":"ephemeral/crawler state","strict_free":true,"purpose":"web crawling and extraction"},
+  {"id":"node-red","name":"Node-RED","status":"optional","required":false,"profile":"automation","host":"loopback/private","ports":[1880],"data":"persistent volume; encrypted credential state","strict_free":true,"purpose":"workflows, webhooks and API integrations","risk":"high"},
+  {"id":"forgejo","name":"Forgejo","status":"optional","required":false,"profile":"git","host":"loopback/private","ports":[3000,2222],"data":"persistent Git/service volume","strict_free":true,"purpose":"canonical private Git service"},
+  {"id":"headscale","name":"Headscale","status":"planned-helper","required":false,"host":"separate infrastructure","strict_free":true,"purpose":"self-hosted private mesh coordination"},
+  {"id":"wireguard","name":"WireGuard / wg-easy","status":"external-helper","required":false,"host":"separate infrastructure","strict_free":true,"purpose":"private network alternative"},
+  {"id":"caddy","name":"Caddy","status":"planned-helper","required":false,"host":"edge","strict_free":true,"purpose":"reverse proxy and TLS"},
+  {"id":"authelia","name":"Authelia","status":"planned-helper","required":false,"host":"edge","strict_free":true,"purpose":"SSO/MFA/access policy"},
+  {"id":"syncthing","name":"Syncthing","status":"planned-helper","required":false,"host":"peer-to-peer","strict_free":true,"purpose":"ordinary file/Obsidian synchronization only"},
+  {"id":"restic","name":"restic","status":"partial","required":false,"host":"local/backup target","strict_free":true,"purpose":"encrypted deduplicated backups"},
+  {"id":"podman","name":"Podman","status":"preferred-runtime","required":false,"host":"local","strict_free":true,"purpose":"container runtime"}
 ]
