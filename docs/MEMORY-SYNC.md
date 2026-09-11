@@ -1,82 +1,96 @@
-# Memory sync across multiple Hermes instances
+# Multi-device memory
 
-## Recommended pattern
+Hermes Privacy Stack v2 uses one authoritative **mcp-memory-service** instance for shared semantic memory.
 
-Run **one authoritative Hindsight server** and connect every Hermes instance to it over Tailscale/WireGuard. Do not synchronize the Hindsight database directory itself.
+## Rule: share the API, never the live database
 
-Each client uses a provider config equivalent to:
+Do not synchronize the live SQLite-vec database with Syncthing, Google Drive, Dropbox or similar tools.
 
-```json
-{
-  "mode": "local_external",
-  "api_url": "http://<private-host>:8888",
-  "bank_id": "hermes",
-  "bank_id_template": "hermes-{profile}"
-}
+Multiple clients should access the same authenticated MCP endpoint over Headscale/WireGuard.
+
+```text
+Hermes A ──┐
+Hermes B ──┼── private network ── mcp-memory-service ── SQLite-vec
+Hermes C ──┘
 ```
 
-This produces banks such as `hermes-default`, `hermes-coder` and `hermes-researcher`. The same named profile on multiple devices shares memory while different profiles remain isolated.
+## Server
 
-## Server setup
-
-Prefer a Tailscale IP and bind Docker directly to that IP rather than `0.0.0.0`:
-
-```bash
-./install.sh --role server --bind-address 100.64.10.20
-```
-
-The installer rejects wildcard and globally routable addresses. A private bind is still not an authorization system: use Tailscale ACLs to restrict which devices/users can reach the memory host.
-
-## Client setup
+Example:
 
 ```bash
 ./install.sh \
+  --role server \
+  --bind-address 100.64.10.20 \
+  --model-provider skip
+```
+
+The generated API key lives in the server's private stack state (`stack.env`) outside Git.
+
+Default endpoint:
+
+```text
+http://100.64.10.20:8765/mcp
+```
+
+Restrict port 8765 so only approved clients can reach it.
+
+## Client
+
+Transfer the memory API key through a password manager, secret manager or another secure channel. Do not paste it into Git, documentation, shell history or chat.
+
+Expose it only to the installer process:
+
+```bash
+MCP_MEMORY_API_KEY='...' \
+./install.sh \
   --role client \
-  --hindsight-url http://100.64.10.20:8888 \
-  --searxng-url http://100.64.10.20:8088
+  --memory-url http://100.64.10.20:8765 \
+  --searxng-url http://100.64.10.20:8088 \
+  --model-provider chatgpt-oauth
 ```
 
-Hermes' Hindsight provider supports `local_external` plus `bank_id_template`. The stack uses `hermes-{profile}` by default.
+The installer writes the key to the local Hermes `.env` and configures Hermes' memory MCP with an Authorization header. It is never accepted as a command-line argument.
 
-## Why not Google Drive / Dropbox / Syncthing for live memory?
+## Memory scope
 
-Databases use locking, WAL files and multi-file transactional state. File-sync tools can copy a half-updated state, fork two writers, or restore files out of order. Use the Hindsight service API for live sharing.
+Unlike the old Hindsight bank template, mcp-memory-service does not automatically create a separate database per Hermes profile in this stack.
 
-The same rule applies to Hermes SQLite/state databases: use Hermes' backup/import/profile-distribution features rather than live-syncing database files.
+Use tags/namespaces deliberately. Recommended conventions:
 
-## What *can* be synchronized as ordinary files?
-
-Good candidates include:
-
-- Obsidian vaults and Markdown knowledge files
-- reviewed skills/source code
-- public-safe distribution config
-- encrypted backup archives
-
-Avoid syncing `.env`, OAuth state, live DB volumes, browser cookie stores or unencrypted memory archives through generic cloud folders.
-
-## Backup/migration
-
-Hindsight 0.8+ provides logical whole-bank export/import through `hindsight-admin export-bank` and `import-bank`. Exported archives omit embeddings and regenerate them at import.
-
-The repository automates the local-container path:
-
-```bash
-python scripts/backup.py --bank hermes-default --bank hermes-coder
-python scripts/restore.py --hindsight-bank path/to/hindsight-hermes-default.zip
+```text
+profile:private-personal
+profile:coder
+profile:researcher
+profile:operator
+project:<project-name>
+source:<source-type>
 ```
 
-For Google Drive/OneDrive/S3-compatible storage, configure an **rclone crypt** remote first, then explicitly confirm it when copying a backup:
+A future profile policy layer will make these tags automatic. Until then, avoid storing sensitive or project-specific information without enough context to retrieve it safely.
 
-```bash
-python scripts/backup.py \
-  --bank hermes-default \
-  --rclone-dest drivecrypt:hermes-backups \
-  --confirm-rclone-crypt
-```
+## Local Hermes memory vs shared MCP memory
 
-The script deliberately cannot infer that an arbitrary remote is encrypted.
+They serve different purposes:
 
-## Conflict model
+- `USER.md` / `MEMORY.md` — local Hermes-owned durable context and preferences.
+- mcp-memory-service — shared semantic memories accessible to approved clients.
 
-A profile bank is authoritative at the Hindsight server. Clients should not create separate same-named local banks and later try to merge them. If you intentionally experiment offline, use a different bank/profile name and migrate/curate facts deliberately instead of blind database merging.
+Do not blindly duplicate every local memory into shared memory.
+
+## Writes and deletions
+
+Memory is an external persistent side effect. Recommended policy:
+
+- storing durable preferences/decisions: allowed after normal memory judgment,
+- storing sensitive personal data: require clear user value and minimization,
+- deleting/consolidating memories: require explicit user intent,
+- passwords/tokens/cookies/recovery codes/private keys: never store.
+
+Hermes' own memory-write approval remains enabled in strict/balanced profiles; MCP memory authority should receive a separate tool allowlist.
+
+## Backups
+
+Use service-safe SQLite backup/export procedures and restic snapshots. Never copy a database while multiple writers are modifying it unless the storage project's documented backup method guarantees consistency.
+
+The backup/restore implementation is being migrated and tracked in `ROADMAP.md`.
