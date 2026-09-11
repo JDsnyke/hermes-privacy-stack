@@ -1,21 +1,19 @@
 memory:
-  provider: hindsight
-  # Built-in MEMORY.md / USER.md writes require approval. Hindsight retention is
-  # configured separately by the provider and remains profile-isolated.
+  # Keep Hermes' built-in local MEMORY.md / USER.md capability available, but do
+  # not bind the distribution to a commercial/open-core external provider.
   write_approval: true
 
 skills:
-  # Persistent agent-created procedures are powerful. Stage every skill write for
-  # explicit review and also scan agent-created content for suspicious patterns.
   write_approval: true
   guard_agent_created: true
 
 web:
   search_backend: searxng
-  # Fail closed: never silently retry a failed private search through anonymous
-  # SaaS/free-tier providers.
   keyless_fallback: false
   keyless_rescue: false
 
-# Provider/model authentication is intentionally not shipped.
-# Run `hermes model` locally and choose OpenAI Codex / ChatGPT OAuth.
+# Shared semantic memory is attached as the self-hosted mcp-memory-service MCP
+# during bootstrap. Model credentials are intentionally never shipped here.
+# The installer supports either:
+#   1) a local llama.cpp OpenAI-compatible endpoint, or
+#   2) optional OpenAI Codex / ChatGPT OAuth through `hermes model`.
