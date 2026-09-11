@@ -1,30 +1,73 @@
-# MCP policy and catalog
+# MCP governance
 
-MCP is an authority boundary. An MCP server is not harmless because it is local or open source.
+Hermes Privacy Stack v2 uses Hermes' native MCP client rather than a separate commercial/open-core gateway.
 
-## Risk classes
+## Principles
 
-- **Low** — read/transform local data with narrow inputs and no external writes.
-- **Medium** — reads broad local/private context or reaches external systems.
-- **High** — can send email, change calendars/repos, execute shell/filesystem writes, manage credentials or create automations.
+- Every MCP is executable authority.
+- Default to the smallest tool set that solves the task.
+- Separate read and write authority.
+- Keep credentials outside Git and out of command arguments.
+- Prefer local/self-hosted MCP servers that satisfy [STRICT-FREE.md](STRICT-FREE.md).
+- Review transport, filesystem roots, network reachability and tool include/exclude lists before enabling a server.
 
-The machine-readable catalog is `catalog/mcps.json`.
+## Implemented: mcp-memory-service
 
-## Defaults
+Bootstrap configures the authenticated Streamable HTTP endpoint:
 
-No high-authority MCP is auto-enabled. Activepieces is installed only by explicit choice. Filesystem/GitHub MCPs are generally redundant with Hermes' native abilities; use them only when they provide a concrete benefit and restrict their tool surface.
+```text
+http://<private-host>:8765/mcp
+```
 
-## Activepieces
+The generated API key is stored in the local Hermes `.env`, and Hermes references it from the Authorization header.
 
-Use Activepieces as the Composio-style app integration gateway. It has a self-hosted MCP server and hundreds of app integrations. Configure app OAuth in its UI, then expose only selected flows/tools to Hermes.
+Memory tools include store/search/list/delete/health-style capabilities. Normal profiles should not receive unrestricted delete/consolidation authority; a formal allowlist is tracked in the roadmap.
 
-## Tool selection rule
+## Planned: Playwright MCP
 
-Prefer the least-authority path:
+Use for interactive browser tasks only when SearXNG + Crawl4AI are insufficient.
 
-1. Hermes native read tool
-2. read-only MCP
-3. narrow write MCP
-4. broad automation gateway
+Security requirements before automatic enablement:
 
-Never expose an entire SaaS account when the task only needs one reviewed action.
+- pin a reviewed package version,
+- isolated browser profile/storage,
+- no personal browser profile mount by default,
+- separate authenticated-session profile when needed,
+- document write/download/upload authority,
+- constrain browser exposure to the task.
+
+## Planned: Docling MCP
+
+Docling Serve is already part of the core stack. Docling MCP will be an optional direct MCP route once its invocation/version is pinned and validated.
+
+## Filesystem / Git MCPs
+
+These are not enabled by default.
+
+If filesystem access is added, scope it to the narrowest directory possible.
+
+If Git/Forgejo write authority is added, separate:
+
+```text
+read profile     status/log/diff/search
+write profile    commit/branch/push/merge-related operations
+```
+
+A research assistant should not inherit repository-write authority merely because the operator profile needs it.
+
+## No ToolHive dependency
+
+ToolHive is intentionally absent under the strict-free product rule. The stack relies on:
+
+```text
+Hermes native MCP configuration
++ tool include/exclude policy
++ Podman/container process isolation where useful
++ private network/firewall policy
+```
+
+That keeps the authority graph smaller and easier to audit.
+
+## Catalog
+
+`catalog/mcps.json` is the machine-readable review list. Adding a catalog entry does not automatically install or enable it.
