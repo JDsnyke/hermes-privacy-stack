@@ -10,26 +10,27 @@
 <header class="hero">
   <div class="orb orb-a"></div><div class="orb orb-b"></div>
   <nav><strong>Hermes Privacy Stack</strong><a href="#configure">Configure</a><a href="#architecture">Architecture</a><a href="#privacy">Privacy</a></nav>
-  <div class="hero-copy"><span class="pill">LOCAL-FIRST • ZERO TRACKING</span><h1>Your agent.<br><span>Your memory.</span><br>Your machine.</h1><p>A privacy-first Hermes stack with Codex OAuth, self-hosted memory, private research and reviewed tools.</p><a class="cta" href="#configure">Build my command →</a></div>
+  <div class="hero-copy"><span class="pill">STRICT-FREE • SELF-HOSTED • ZERO TRACKING</span><h1>Your agent.<br><span>Your memory.</span><br>Your infrastructure.</h1><p>A privacy-first Hermes stack built from fully self-hosted services without paid feature unlocks. Local inference is the default; ChatGPT/Codex OAuth stays optional.</p><a class="cta" href="#configure">Build my command →</a></div>
 </header>
 <main>
-<section id="architecture"><h2>One brain, narrow trust boundaries</h2><p class="lead">Persistent data stays local or on your private tailnet. Cloud services are optional transport, never the canonical memory database.</p>
+<section id="architecture"><h2>Small services, narrow trust boundaries</h2><p class="lead">The self-hosted baseline does not require a commercial control plane. External models remain explicit opt-ins rather than infrastructure dependencies.</p>
 <div class="diagram">
-  <div class="node primary">Hermes<br><small>Codex OAuth</small></div>
+  <div class="node primary">Hermes<br><small>agent</small></div>
   <div class="line l1"></div><div class="line l2"></div><div class="line l3"></div>
-  <div class="node n1">Hindsight<br><small>memory</small></div>
+  <div class="node n1">MCP Memory<br><small>SQLite-vec</small></div>
   <div class="node n2">SearXNG<br><small>search</small></div>
-  <div class="node n3">MCP<br><small>tools</small></div>
+  <div class="node n3">llama.cpp<br><small>local model</small></div>
 </div></section>
 <section id="configure" class="panel"><h2>Configure the install</h2><div class="grid">
 <label>Preset<select id="preset"><option value="balanced">Balanced</option><option value="strict">Strict</option><option value="developer">Developer</option><option value="minimal">Minimal</option></select></label>
 <label>Machine role<select id="role"><option value="local">Local</option><option value="server">Server</option><option value="client">Client</option></select></label>
+<label>Model<select id="model"><option value="local">Local llama.cpp</option><option value="chatgpt-oauth">ChatGPT / Codex OAuth</option><option value="skip">Configure later</option></select></label>
 <label>Platform<select id="platform"><option value="unix">macOS / Linux</option><option value="windows">Windows PowerShell</option></select></label>
-</div><div class="privacy-meter"><span>Privacy posture</span><strong id="score">95 / 100</strong><div><i id="bar"></i></div></div>
-<pre id="command"></pre><button id="copy">Copy command</button><p class="micro">No selections leave this browser. No analytics. No third-party JavaScript.</p></section>
+</div><div class="privacy-meter"><span>Self-hosted privacy posture</span><strong id="score">98 / 100</strong><div><i id="bar"></i></div></div>
+<pre id="command"></pre><button id="copy">Copy command</button><p class="micro">For local llama.cpp, the installer asks for your existing GGUF path. OAuth is handled by Hermes itself. No selections leave this browser. No analytics. No third-party JavaScript.</p></section>
 <section id="privacy"><h2>Privacy is architecture, not a checkbox</h2><div class="cards">
-<article><b>01</b><h3>Secrets stay local</h3><p>OAuth tokens, API keys and connector credentials are excluded from distributions, Git and Pages.</p></article>
-<article><b>02</b><h3>Memory uses APIs</h3><p>Share one Hindsight service over a private network. Never synchronize its live database files through Drive.</p></article>
-<article><b>03</b><h3>Tools earn authority</h3><p>Community skills and high-authority MCPs are reviewed and opt-in rather than automatically installed.</p></article>
+<article><b>01</b><h3>No paid unlock dependency</h3><p>The supported runtime uses strict-free self-hosted services rather than community editions with required Enterprise features.</p></article>
+<article><b>02</b><h3>Share APIs, not databases</h3><p>Clients use one authenticated mcp-memory-service over Headscale/WireGuard. Live SQLite files are never synchronized between machines.</p></article>
+<article><b>03</b><h3>External models are optional</h3><p>Use llama.cpp locally, or explicitly opt into ChatGPT/Codex OAuth when the model benefit justifies sending model traffic externally.</p></article>
 </div></section>
-</main><footer>Hermes Privacy Stack • static site • no tracking</footer><script src="app.js"></script></body></html>
+</main><footer>Hermes Privacy Stack • strict-free v2 • static site • no tracking</footer><script src="app.js"></script></body></html>
