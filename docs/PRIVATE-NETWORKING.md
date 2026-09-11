@@ -1,133 +1,93 @@
-# Private overlay networking
+# Private networking
 
-Hermes Privacy Stack does **not** depend on a specific VPN vendor. Multi-device mode needs only a trusted private overlay address that is reachable by approved devices and is not globally routable.
+The strict-free stack supports two private-network families:
 
-The installer therefore binds services to one exact private IP and rejects wildcard/global addresses. The overlay is a transport/security boundary around Hindsight, SearXNG, Docling and other services; it does not replace application authentication where that exists.
+1. **Headscale** — self-hosted coordination with compatible Tailscale clients.
+2. **WireGuard** — directly managed, optionally with wg-easy for administration.
 
-## Recommended choices
+NetBird and the managed Tailscale control plane are intentionally not part of the supported strict-free baseline.
 
-| Option | Control plane | Clients | Best fit | Trade-offs |
-|---|---|---|---|---|
-| **NetBird self-hosted** | Self-hosted | NetBird | Best privacy-first all-in-one choice | Requires a publicly reachable management server/domain for normal self-hosted deployments; management/signal/relay components are AGPLv3 |
-| **Headscale + Tailscale clients** | Self-hosted | Tailscale clients | Lightweight personal/small-lab control plane | Narrower feature scope than Tailscale SaaS; Headscale server normally needs to be internet reachable for roaming clients |
-| **Tailscale** | Managed by Tailscale | Tailscale | Easiest setup and excellent cross-platform UX | Coordination/control metadata is handled by a third party |
-| **Netmaker** | Self-hosted | Netclient / WireGuard | More traditional WireGuard network/site-to-site needs | Heavier operational model; server generally expects public IP/domain |
-| **Plain WireGuard** | None | WireGuard | Small fixed device set, minimum moving parts | Manual key/routing lifecycle, no automatic NAT traversal or identity policy |
+## What the network protects
 
-Other projects can be used if they provide a stable private IP per host. The stack should not assume a particular `100.x` allocation range.
+A shared server may expose these ports only on its private interface:
 
-## Default recommendation
-
-For the project's privacy-first goal:
-
-1. **NetBird self-hosted** when you are comfortable operating a small public management/control endpoint and want a complete self-hosted dashboard, policies, SSO/local users and cross-platform clients.
-2. **Headscale** when you want the Tailscale client experience with a self-hosted coordination server and a deliberately smaller personal/lab-oriented scope.
-3. **Tailscale** when operational simplicity matters more than self-hosting the control plane.
-4. **Plain WireGuard** for a few static machines where manual networking is acceptable.
-
-NetBird's current self-hosted quickstart uses a Linux VM, Docker Compose, a public domain and publicly reachable TCP 80/443 plus UDP 3478. It now includes local user management, so an external IdP is optional. Do not place Hermes/Hindsight/SearXNG themselves on those public ports; only the overlay control plane should be public where required.
-
-Headscale is an open-source implementation of the Tailscale control server aimed at a single tailnet for personal/small-organization use. Its clients are standard Tailscale clients pointed at the Headscale server.
-
-## Server setup
-
-First join the always-on Hermes server to your chosen overlay and find its **overlay IPv4 address**.
-
-### NetBird
-
-```bash
-netbird status --ipv4
+```text
+8765   mcp-memory-service
+8088   SearXNG
+5001   Docling
+11235  Crawl4AI (optional)
+1880   Node-RED (admin/high authority; restrict further)
+3000   Forgejo HTTP (optional)
+2222   Forgejo SSH (optional)
+8080   llama.cpp (only if remote inference is intentionally shared)
 ```
 
-Current NetBird clients expose `--ipv4` specifically for scriptable retrieval of the peer's overlay IPv4 address.
+Most clients should need only memory/search/docs.
 
-### Tailscale / Headscale
+## Never use wildcard host publication
 
-```bash
-tailscale ip -4
-```
+Do not solve reachability problems by binding the Compose stack to `0.0.0.0` or `::`.
 
-### Plain WireGuard / Netmaker
-
-Use the private address assigned to the WireGuard/Netmaker interface.
-
-Then bind the stack to that exact address:
+Use:
 
 ```bash
-./install.sh --role server --bind-address 100.100.20.30
+./install.sh --role server --bind-address <private-ip>
 ```
 
-The installer rejects `0.0.0.0`, `::` and globally routable addresses.
+The bootstrap rejects public/global addresses.
 
-## Clients
+## Headscale
 
-Join clients to the same overlay and point Hermes at the server's overlay IP:
+Headscale gives moving laptops/desktops a stable private mesh while keeping the coordination server under your control.
+
+The helper can detect the IPv4 advertised by a compatible Tailscale client:
 
 ```bash
-./install.sh \
-  --role client \
-  --hindsight-url http://100.100.20.30:8888 \
-  --searxng-url http://100.100.20.30:8088
+python scripts/private_network.py
 ```
 
-The address can belong to NetBird, Tailscale, Headscale, Netmaker, plain WireGuard or another trusted overlay.
+Detection alone cannot prove which control server enrolled that client. Verify it is pointed at your Headscale instance before treating the connection as strict-free.
 
-## Least privilege
+See [HEADSCALE.md](HEADSCALE.md).
 
-A private overlay IP is **not** sufficient authorization by itself. Apply provider ACL/policy rules or host firewall rules so ordinary clients can reach only what they need.
+## WireGuard / wg-easy
 
-| Port | Service | Typical policy |
-|---:|---|---|
-| 8888 | Hindsight API | Hermes client devices |
-| 8088 | SearXNG | Hermes client devices if search is shared |
-| 9999 | Hindsight UI | Admin devices only |
-| 5001 | Docling | Only clients that require document processing |
-| 8090 | Activepieces | Admin/operator devices only |
+For a small stable set of devices, plain WireGuard has fewer moving parts.
 
-Prefer deny-by-default rules.
+After assigning a private address to the server interface:
 
-## Provider notes
+```bash
+python scripts/private_network.py --address 10.50.0.2
+./install.sh --role server --bind-address 10.50.0.2
+```
 
-### NetBird
+wg-easy can simplify peer administration, but the network should still be designed as ordinary WireGuard rather than making application services publicly reachable.
 
-Advantages for this stack:
+## Least-privilege firewall model
 
-- WireGuard-based encrypted overlay.
-- Fully self-hostable control plane.
-- Native Windows, macOS, Linux, Android, iOS and additional NAS/firewall platforms.
-- Granular access policies.
-- Built-in local user authentication; optional OIDC/SSO.
-- Scriptable `netbird status --ipv4` and JSON status.
+Example policy:
 
-Privacy/operations caveats:
+```text
+ordinary Hermes clients
+  allow -> server:8765 memory
+  allow -> server:8088 search
+  allow -> server:5001 docs
 
-- The normal self-hosted quickstart requires an Internet-reachable Linux VM/domain for coordination/NAT traversal.
-- Management, signal, relay and combined server components use AGPLv3; other repository portions remain BSD-3-Clause.
-- Keep the public control plane separated from the private Hermes service host when practical.
+researcher clients
+  + allow -> server:11235 Crawl4AI
 
-### Headscale
+admin/operator devices
+  + allow -> server:1880 Node-RED
+  + allow -> server:3000 Forgejo UI
+  + allow -> server:2222 Forgejo SSH
+```
 
-Advantages:
+Do not expose an administrative UI simply because another service on the same machine needs remote access.
 
-- Self-hosted, open-source Tailscale control server.
-- Standard Tailscale clients across platforms.
-- Supports base networking, DNS, tags, routes/subnet routers/exit nodes and ACL/policy functionality.
-- Particularly well suited to a personal/small network.
+## Public OAuth callbacks later
 
-Caveat: it intentionally implements a narrower scope than Tailscale's managed service.
+Some external OAuth providers require a public HTTPS callback. The future Caddy/Authelia edge design must expose only the exact callback/service route required. A public callback must never implicitly publish memory, SearXNG, Docling or Node-RED.
 
-### Tailscale
+## DNS
 
-Best UX and easiest first install. It remains a valid option, but is no longer the architectural default in project documentation. Treat it as one provider implementing the private-overlay interface.
-
-### Netmaker
-
-Useful when the desired topology looks more like managed WireGuard/site-to-site networking, routers and gateways. It can integrate ordinary WireGuard clients, but its server deployment is heavier than NetBird/Headscale for a small personal Hermes mesh.
-
-### Plain WireGuard
-
-The smallest trust surface and no coordination SaaS, but keys, addresses, NAT traversal and peer configuration are yours to manage. Excellent for fixed server-to-server links; less ergonomic for laptops and phones that roam.
-
-## Design rule for Hermes Privacy Stack
-
-Code should ask for or auto-detect an **overlay private address**, never require a particular network vendor. Provider-specific automation is convenience only.
+Private DNS is optional. IP-based service URLs are simpler during early setup. If private DNS is used, make sure DNS resolution itself stays within the trusted network and certificates/hostnames are managed consistently.
