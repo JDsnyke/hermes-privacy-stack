@@ -22,18 +22,12 @@ jobs:
           python-version: '3.12'
       - name: Python syntax
         run: python -m compileall -q bootstrap.py scripts
-      - name: Bootstrap privacy invariants
+      - name: Bootstrap strict-free invariants
         run: python bootstrap.py --self-test
-      - name: Private-network invariants
+      - name: Private-network strict-free invariants
         run: python scripts/private_network.py --self-test
-      - name: Image-lock parser invariants
+      - name: Image-lock strict-free policy
         run: python scripts/image_lock.py --self-test
-      - name: Nango setup invariants
-        run: python scripts/setup_nango.py --self-test
-      - name: Nango proxy authority invariants
-        run: python scripts/nango_proxy.py --self-test
-      - name: Hindsight profile-bank configuration
-        run: python scripts/test_hindsight_config.py
       - name: Bootstrap twice-run idempotency
         run: python scripts/test_bootstrap_idempotency.py
       - name: Profile bundle discovery
@@ -98,26 +92,30 @@ jobs:
         run: |
           tmp="$(mktemp)"
           python scripts/build_personality.py \
-            --tone direct \
-            --verbosity low \
-            --initiative balanced \
-            --confirmation strict \
-            --memory minimal \
-            --output "$tmp" \
-            --apply \
-            --yes
+            --tone direct --verbosity low --initiative balanced \
+            --confirmation strict --memory minimal \
+            --output "$tmp" --apply --yes
           grep -q '^# Soul — Custom Private Hermes' "$tmp"
           grep -q 'Never place passwords' "$tmp"
           grep -q 'Confirm before external writes' "$tmp"
           rm -f "$tmp"
-      - name: Compose core structure
-        run: docker compose -f stack/compose.yml --profile core config --quiet
-      - name: Compose Nango structure
+      - name: Validate all strict-free Compose profiles
         env:
-          HPS_NANGO_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
-          HPS_NANGO_DB_PASSWORD: ci-placeholder
-          HPS_NANGO_DASHBOARD_PASSWORD: ci-placeholder
-        run: docker compose -f stack/compose.yml --profile nango config --quiet
+          HPS_MEMORY_API_KEY: ci-not-a-runtime-secret
+          HPS_NODERED_CREDENTIAL_SECRET: ci-not-a-runtime-secret
+          HPS_LLAMA_MODEL_DIR: ${{ github.workspace }}
+          HPS_LLAMA_MODEL_FILE: ci-placeholder.gguf
+        run: |
+          docker compose -f stack/compose.yml \
+            --profile core \
+            --profile local-model \
+            --profile research \
+            --profile automation \
+            --profile git \
+            config --quiet
+      - name: Reject banned open-core service regressions
+        run: |
+          ! grep -Eri 'nangohq|activepieces/|vectorize-io/hindsight|ollama/ollama|netbirdio|firecrawl/firecrawl|windmill-labs|stacklok/toolhive' stack/ scripts/image_lock.py
       - name: Verify SearXNG runtime secret marker
         run: grep -q '__HPS_SEARXNG_SECRET__' stack/config/searxng/settings.yml
       - name: Verify static site files and local-only dependencies
