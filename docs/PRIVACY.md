@@ -1,97 +1,110 @@
 # Privacy principles
 
-See [THREAT-MODEL.md](THREAT-MODEL.md) for the detailed threat model. This page defines the operational defaults.
+See [THREAT-MODEL.md](THREAT-MODEL.md) for the detailed threat model and [STRICT-FREE.md](STRICT-FREE.md) for service acceptance policy.
 
 ## Protected assets
 
-- OAuth refresh/access tokens
-- API keys and connector tokens
-- Nango encryption key, dashboard credentials, proxy-scoped keys and provider connections
-- user profile (`USER.md`) and memories
-- conversation/session history
+- OAuth access/refresh tokens
+- API keys and connector credentials
+- `USER.md`, memories and session history
 - files ingested for research/document work
-- Activepieces/OpenViking connection secrets
+- mcp-memory-service data
+- Node-RED credential state
 - browser cookies/session state
-- backup encryption keys and archives
+- Forgejo private repositories
+- backup credentials and archives
 
 ## Defaults
 
 ### Local first
 
-Core services bind to `127.0.0.1` by default. `server` mode accepts only a specific loopback/private/overlay IP and rejects `0.0.0.0`, `::` and globally routable addresses.
+Local services bind to `127.0.0.1`. Server mode accepts only an exact loopback/private/CGNAT/LAN address and rejects wildcard/global bindings.
 
-Optional Nango follows the same host bind. Its Postgres database is not published to a host port.
+### Self-hosted functionality first
 
-### Fail closed web search
+The supported runtime stack must remain operational without paid feature unlocks or mandatory commercial control planes. External providers are explicit options, not dependencies.
 
-Hermes is explicitly configured with:
+ChatGPT/Codex OAuth is an example: it is allowed as an optional model path because local llama.cpp remains available and the self-hosted services do not depend on OpenAI.
 
-```yaml
-web:
-  search_backend: searxng
-  keyless_fallback: false
-  keyless_rescue: false
-```
+### Fail-closed web search
 
-If the private search service fails, the desired behavior is an error—not silently transmitting the query to an anonymous free-tier provider.
+Hermes is configured with SearXNG and anonymous keyless fallback/rescue disabled. A broken private search backend should fail rather than silently transmitting the query somewhere else.
 
 ### Runtime secrets outside Git
 
-The installer/setup helpers write machine-local state outside the repository:
+The bootstrap generates machine-local values outside the checkout, including:
 
-- generated Compose env
-- SearXNG secret key/runtime config
-- optional Nango encryption/database/dashboard secrets
-- topology/install metadata
-- backup bundles
+- SearXNG secret/config,
+- mcp-memory-service API key,
+- Node-RED credential-encryption secret,
+- topology/install metadata.
 
-Git stores templates and reviewed defaults only.
+OAuth tokens remain managed by Hermes/provider tooling and are never requested by this repository.
 
-### Credential separation
+### Memory separation
 
-When Nango is enabled, treat it as a credential boundary rather than a convenience database.
+`USER.md` / `MEMORY.md` are Hermes-local durable context. mcp-memory-service is shared semantic memory over authenticated MCP.
 
-- Provider OAuth refresh tokens and API credentials stay in Nango rather than being copied into Hermes.
-- Hermes receives only a Nango proxy key with the narrowest useful scope, preferably `environment:proxy`.
-- The bundled Nango helper accepts its proxy key only from local environment/config, never as a command-line argument.
-- Read methods are the default. State-changing methods require an explicit write flag after user approval.
-- Nango's database and `NANGO_ENCRYPTION_KEY` are a recovery pair; protect and back them up together.
-- A public HTTPS OAuth callback for Nango must not expose Hindsight, SearXNG, Docling or the rest of the private stack.
+Do not store passwords, private keys, cookies, recovery codes, OTPs or OAuth tokens in either memory layer.
+
+### No live database sync
+
+Do not synchronize mcp-memory-service SQLite, Node-RED state, Forgejo databases or other live service databases through Syncthing/Drive/Dropbox.
+
+Use documented backup/export procedures and restic snapshots instead.
 
 ### Least authority
 
 - no automatic community-skill installation,
-- no automatic high-authority MCP,
-- built-in Hermes memory/skill writes can require approval,
-- optional integration layers are disabled unless selected,
-- Nango Proxy uses a read-first helper with an explicit write gate,
-- OpenViking is not auto-started until authenticated runtime provisioning is implemented.
+- no automatic high-authority MCP installation,
+- agent-created memory/skill writes use approval gates where Hermes supports them,
+- Node-RED is optional and treated as high authority,
+- Forgejo read/write access should be separated,
+- Playwright browser state should be isolated,
+- memory deletion requires explicit user intent.
 
-### Outbound proxy hardening
+### Private transport
 
-An authenticated API proxy can become an SSRF/confused-deputy path. The Nango profile keeps base-URL override protections enabled, blocks private-IP outbound targets by default and limits redirects. Do not disable these controls globally just to reach one internal API; design a narrow exception or a dedicated integration instead.
+Remote service access should travel through self-hosted Headscale or WireGuard/wg-easy. Detection of a `tailscale` client does not prove it uses Headscale; verify its control server.
 
-### No live database sync
+## Model privacy
 
-Hindsight/Hermes/Nango databases are never synchronized through Drive/Dropbox/Syncthing. Multi-device memory uses the Hindsight API; backups use logical export/import. Nango will use a logical Postgres backup path once its release hardening in issue #6 is complete.
+### llama.cpp
 
-### Cloud storage only after encryption
+Prompts and model output remain on infrastructure you control, subject to your host/network security.
 
-Google Drive/OneDrive/S3-compatible storage may be used for encrypted backup objects. The backup helper only copies to rclone when the user explicitly confirms the destination is a crypt remote.
+### ChatGPT/Codex OAuth
+
+Selecting OAuth is an explicit privacy boundary change. Prompts/model traffic are sent to the chosen external provider under its terms. The rest of the stack can remain self-hosted.
+
+## Browser / crawling privacy
+
+Prefer the least-powerful tool that works:
+
+```text
+SearXNG          discovery
+Crawl4AI         ordinary extraction
+Docling          documents/PDFs
+Playwright MCP   interactive browser work
+```
+
+A browser session can contain cookies and authenticated account data. Never mount a personal browser profile into agent automation by default.
 
 ## Baseline host security
 
-This project cannot make a compromised host safe. Use full-disk encryption, OS updates, screen lock, MFA/passkeys, secure boot where practical, and a hardware-backed credential store/password manager for long-lived secrets.
+This stack cannot protect a compromised host. Use full-disk encryption, OS updates, screen lock, passkeys/MFA, secure boot where practical, a password manager and least-privilege local accounts.
 
-## Privacy review rule
+## Review rule
 
-Every new service/MCP/skill/credential broker should answer:
+Every new service/MCP/skill must answer:
 
 1. What data can it read?
 2. What can it write/delete/send?
 3. Which ports/processes does it expose?
 4. Which credentials/scopes does it require?
-5. Does data leave the device/private overlay?
+5. Does data leave the trusted network?
 6. What happens when it fails?
 7. Can the same job be done with less authority?
-8. How is its encrypted/secret-bearing state backed up and restored?
+8. Is any capability required for our use case paid or Enterprise-only?
+
+If a required capability is paywalled, the dependency does not enter the supported strict-free stack.
