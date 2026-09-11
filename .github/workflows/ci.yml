@@ -113,9 +113,12 @@ jobs:
             --profile automation \
             --profile git \
             config --quiet
-      - name: Reject banned open-core service regressions
+      - name: Reject banned runtime-service regressions
         run: |
-          ! grep -Eri 'nangohq|activepieces/|vectorize-io/hindsight|ollama/ollama|netbirdio|firecrawl/firecrawl|windmill-labs|stacklok/toolhive' stack/ scripts/image_lock.py
+          # Documentation and policy tests may name removed projects deliberately.
+          # Runtime/config surfaces must not reintroduce their container families.
+          ! grep -Eri 'nangohq|activepieces/|vectorize-io/hindsight|ollama/ollama|netbirdio|firecrawl/firecrawl|windmill-labs|stacklok/toolhive' \
+            stack/ bootstrap.py scripts/guided_setup.py catalog/services.json catalog/mcps.json
       - name: Verify SearXNG runtime secret marker
         run: grep -q '__HPS_SEARXNG_SECRET__' stack/config/searxng/settings.yml
       - name: Verify static site files and local-only dependencies
