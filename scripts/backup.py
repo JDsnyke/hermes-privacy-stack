@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
-"""Create privacy-aware backups for Hermes Privacy Stack.
+"""Create privacy-aware Hermes Privacy Stack v2 backup bundles.
+
+This script intentionally does NOT copy live service databases. Until the dedicated
+mcp-memory-service consistency-safe backup helper lands, shared memory must be backed
+up using the upstream/service-safe procedure described in docs/BACKUP-RESTORE.md.
 
 Modes:
-- safe (default): config/skills/personality only; excludes credentials, USER.md,
-  MEMORY.md, sessions and databases.
-- full: delegates to `hermes backup`, which intentionally includes credentials
-  and must be encrypted before cloud storage.
+- safe: sanitized Hermes config/personality/skills only.
+- full: delegates to Hermes native backup and therefore may contain credentials.
 
-Hindsight banks are exported logically with `hindsight-admin export-bank` from
-inside the running container. Live database files are never copied.
+Optional restic support snapshots the completed bundle. Repository/password/backend
+credentials are read by restic from its normal environment/config; this script never
+accepts a backup password on the command line.
 """
 from __future__ import annotations
 
@@ -16,14 +19,12 @@ import argparse
 import hashlib
 import json
 import os
-import re
 import shutil
 import subprocess
 import tarfile
 import time
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
 IS_WINDOWS = os.name == "nt"
 
 
@@ -49,107 +50,94 @@ def run(cmd: list[str], check: bool = True):
 
 
 def sha256(path: Path) -> str:
-    h = hashlib.sha256()
-    with path.open("rb") as f:
-        for chunk in iter(lambda: f.read(1024 * 1024), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
-
-def safe_name(value: str) -> str:
-    cleaned = re.sub(r"[^A-Za-z0-9_.-]+", "-", value).strip("-")
-    return cleaned or "bank"
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def create_safe_config_archive(destination: Path) -> Path:
-    h = hermes_home()
-    allow = ["config.yaml", "SOUL.md", "AGENTS.md", "skills", "cron", "scripts", "hindsight/config.json"]
+    home = hermes_home()
+    allow = ["config.yaml", "SOUL.md", "AGENTS.md", "skills", "cron", "scripts"]
     with tarfile.open(destination, "w:gz") as tf:
         for rel in allow:
-            source = h / rel
+            source = home / rel
             if source.exists():
                 tf.add(source, arcname=rel, recursive=True)
     return destination
 
 
-def compose_base() -> list[str]:
-    env = state_home() / "stack.env"
-    return ["docker", "compose", "--env-file", str(env), "-f", str(ROOT / "stack" / "compose.yml"), "--profile", "core"]
-
-
-def export_bank(bank: str, destination: Path, include_history: bool) -> Path:
-    if not shutil.which("docker"):
-        raise SystemExit("Docker is required for Hindsight logical bank export.")
-    if not (state_home() / "stack.env").exists():
-        raise SystemExit("Generated stack.env not found; this helper expects a locally managed Hindsight container.")
-
-    container_path = f"/tmp/hps-{safe_name(bank)}-{int(time.time())}.zip"
-    cmd = compose_base() + ["exec", "-T", "hindsight", "hindsight-admin", "export-bank", "--bank", bank, "--output", container_path]
-    if include_history:
-        cmd.append("--include-history")
-    run(cmd)
-    run(compose_base() + ["cp", f"hindsight:{container_path}", str(destination)])
-    run(compose_base() + ["exec", "-T", "hindsight", "rm", "-f", container_path], check=False)
-    return destination
+def restic_backup(bundle: Path) -> None:
+    if not shutil.which("restic"):
+        raise SystemExit("restic is not installed.")
+    if not os.environ.get("RESTIC_REPOSITORY"):
+        raise SystemExit("Set RESTIC_REPOSITORY in the environment before using --restic.")
+    if not (os.environ.get("RESTIC_PASSWORD") or os.environ.get("RESTIC_PASSWORD_FILE") or os.environ.get("RESTIC_PASSWORD_COMMAND")):
+        raise SystemExit(
+            "Configure restic authentication with RESTIC_PASSWORD, RESTIC_PASSWORD_FILE, "
+            "or RESTIC_PASSWORD_COMMAND. Passwords are never accepted as CLI arguments here."
+        )
+    run(["restic", "backup", str(bundle), "--tag", "hermes-privacy-stack", "--tag", "strict-free-v2"])
 
 
 def main() -> int:
-    p = argparse.ArgumentParser()
-    p.add_argument("--output", help="Backup parent directory.")
-    p.add_argument("--mode", choices=["safe", "full"], default="safe")
-    p.add_argument("--bank", action="append", default=[], help="Hindsight bank to export; repeatable.")
-    p.add_argument("--include-history", action="store_true", help="Include Hindsight audit/LLM history in bank exports.")
-    p.add_argument("--rclone-dest", help="Optional preconfigured *encrypted* rclone crypt destination, e.g. drivecrypt:hermes.")
-    p.add_argument("--confirm-rclone-crypt", action="store_true", help="Required with --rclone-dest; confirms the destination is an rclone crypt remote.")
-    args = p.parse_args()
+    parser = argparse.ArgumentParser(description="Create Hermes Privacy Stack v2 backups")
+    parser.add_argument("--output", help="Backup parent directory")
+    parser.add_argument("--mode", choices=["safe", "full"], default="safe")
+    parser.add_argument("--restic", action="store_true", help="Snapshot the completed bundle using configured restic environment")
+    parser.add_argument(
+        "--include-memory",
+        action="store_true",
+        help="Reserved safety gate; currently refuses because live SQLite copying is not a supported backup method.",
+    )
+    args = parser.parse_args()
 
-    state = state_home()
-    parent = Path(args.output).expanduser() if args.output else state / "backups"
+    if args.include_memory:
+        raise SystemExit(
+            "Automated mcp-memory-service backup is not release-ready yet. Refusing to copy the live SQLite volume. "
+            "Follow docs/BACKUP-RESTORE.md for the current service-safe procedure."
+        )
+
+    parent = Path(args.output).expanduser() if args.output else state_home() / "backups"
     stamp = time.strftime("%Y%m%d-%H%M%S")
-    bundle = parent / f"hps-{stamp}"
+    bundle = parent / f"hps-v2-{stamp}"
     bundle.mkdir(parents=True, exist_ok=False)
     artifacts: list[Path] = []
 
     if args.mode == "safe":
-        config_archive = bundle / "hermes-config-safe.tar.gz"
-        create_safe_config_archive(config_archive)
-        artifacts.append(config_archive)
-        print(f"Created sanitized config archive: {config_archive}")
+        archive = create_safe_config_archive(bundle / "hermes-config-safe.tar.gz")
+        artifacts.append(archive)
+        contains_credentials = False
     else:
         if not shutil.which("hermes"):
             raise SystemExit("Hermes is required for --mode full.")
-        full = bundle / "hermes-full.zip"
-        print("! Full Hermes backups include .env/auth credentials. Encrypt before cloud storage.")
-        run(["hermes", "backup", "-o", str(full)])
-        artifacts.append(full)
-
-    for bank in args.bank:
-        target = bundle / f"hindsight-{safe_name(bank)}.zip"
-        export_bank(bank, target, args.include_history)
-        artifacts.append(target)
-        print(f"Exported Hindsight bank {bank!r}: {target}")
+        archive = bundle / "hermes-full.zip"
+        print("! Full Hermes backups may contain OAuth/API credentials. Keep the backup encrypted.")
+        run(["hermes", "backup", "-o", str(archive)])
+        artifacts.append(archive)
+        contains_credentials = True
 
     manifest = {
-        "schema": 1,
+        "schema": 2,
+        "architecture": "strict-free-v2",
         "created_at": stamp,
         "mode": args.mode,
-        "contains_credentials": args.mode == "full",
-        "hindsight_banks": args.bank,
+        "contains_credentials": contains_credentials,
+        "shared_memory_included": False,
+        "note": "mcp-memory-service database intentionally excluded until consistency-safe automated backup is implemented",
         "files": [{"name": item.name, "size": item.stat().st_size, "sha256": sha256(item)} for item in artifacts],
     }
     manifest_path = bundle / "manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
-    if args.rclone_dest:
-        if not args.confirm_rclone_crypt:
-            raise SystemExit("--rclone-dest requires --confirm-rclone-crypt. The tool cannot safely infer your remote's encryption policy.")
-        if not shutil.which("rclone"):
-            raise SystemExit("rclone is not installed.")
-        run(["rclone", "copy", str(bundle), args.rclone_dest, "--create-empty-src-dirs"])
-        print(f"Copied bundle to confirmed encrypted rclone destination: {args.rclone_dest}")
+    if args.restic:
+        restic_backup(bundle)
+        print("restic snapshot completed")
 
-    print(f"\nBackup complete: {bundle}")
-    print("Keep at least one restore-tested copy on storage independent of the machine.")
+    print(f"\nBackup bundle: {bundle}")
+    print("Shared semantic-memory data is NOT included by this command yet.")
+    print("Run restore drills before relying on any backup as your only copy.")
     return 0
 
 
