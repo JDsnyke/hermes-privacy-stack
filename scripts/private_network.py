@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Detect a safe private overlay address without coupling the stack to one VPN vendor.
+"""Validate/detect addresses for the strict-free private-network layer.
 
-Supported auto-detection:
-- NetBird: `netbird status --ipv4`
-- Tailscale or Headscale-managed Tailscale clients: `tailscale ip -4`
+Supported paths:
+- Headscale control plane with the open-source Tailscale client (`tailscale ip -4`).
+- Plain WireGuard / wg-easy via a manually supplied private interface address.
 
-Netmaker and plain WireGuard remain manual because interface names/address allocation are deployment-specific.
+A detected `tailscale` client does NOT prove it is enrolled against Headscale. The user
+must verify the control server is self-hosted before treating it as strict-free.
 """
 from __future__ import annotations
 
@@ -14,7 +15,6 @@ import ipaddress
 import json
 import shutil
 import subprocess
-import sys
 
 
 def validate_private_ip(value: str) -> str:
@@ -23,10 +23,10 @@ def validate_private_ip(value: str) -> str:
         raise ValueError("empty/wildcard addresses are unsafe")
     ip = ipaddress.ip_address(raw)
     cgnat = ipaddress.ip_network("100.64.0.0/10")
-    if not (ip.is_loopback or ip.is_private or ip.is_link_local or (ip.version == 4 and ip in cgnat)):
-        raise ValueError(f"{raw} is globally routable")
     if ip.version != 4:
         raise ValueError("this helper currently selects IPv4 only")
+    if not (ip.is_loopback or ip.is_private or ip.is_link_local or ip in cgnat):
+        raise ValueError(f"{raw} is globally routable")
     return raw
 
 
@@ -37,23 +37,10 @@ def run_output(command: list[str]) -> str | None:
         proc = subprocess.run(command, text=True, capture_output=True, timeout=8, check=False)
     except (OSError, subprocess.TimeoutExpired):
         return None
-    if proc.returncode:
-        return None
-    return proc.stdout.strip()
+    return proc.stdout.strip() if proc.returncode == 0 else None
 
 
-def detect_netbird() -> dict | None:
-    value = run_output(["netbird", "status", "--ipv4"])
-    if not value:
-        return None
-    try:
-        address = validate_private_ip(value.splitlines()[0])
-    except (ValueError, IndexError):
-        return None
-    return {"provider": "netbird", "address": address, "command": "netbird status --ipv4"}
-
-
-def detect_tailscale() -> dict | None:
+def detect_headscale_client() -> dict | None:
     value = run_output(["tailscale", "ip", "-4"])
     if not value:
         return None
@@ -63,24 +50,16 @@ def detect_tailscale() -> dict | None:
         except ValueError:
             continue
         return {
-            "provider": "tailscale-or-headscale",
+            "provider": "headscale-compatible-client",
             "address": address,
             "command": "tailscale ip -4",
+            "warning": "Verify this client is enrolled to your self-hosted Headscale server, not the managed Tailscale control plane.",
         }
     return None
 
 
-def detect_all() -> list[dict]:
-    found = []
-    for fn in (detect_netbird, detect_tailscale):
-        result = fn()
-        if result and all(x["address"] != result["address"] for x in found):
-            found.append(result)
-    return found
-
-
 def self_test() -> None:
-    for good in ("127.0.0.1", "10.0.0.5", "172.16.4.2", "192.168.50.7", "100.64.10.20", "100.119.62.6/16"):
+    for good in ("127.0.0.1", "10.0.0.5", "172.16.4.2", "192.168.50.7", "100.64.10.20"):
         validate_private_ip(good)
     for bad in ("", "0.0.0.0", "8.8.8.8", "1.1.1.1"):
         try:
@@ -91,32 +70,31 @@ def self_test() -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Detect a private overlay address for Hermes Privacy Stack")
+    parser = argparse.ArgumentParser(description="Strict-free private-network helper")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--self-test", action="store_true")
-    parser.add_argument("--address", help="Validate a manually selected overlay/private IPv4 address")
+    parser.add_argument("--address", help="Validate a Headscale/WireGuard/private LAN IPv4")
     args = parser.parse_args()
 
     if args.self_test:
         self_test()
-        print("private-network self-test passed")
+        print("private-network strict-free self-test passed")
         return 0
-
     if args.address:
-        result = {"provider": "manual", "address": validate_private_ip(args.address)}
+        result = {"provider": "manual-wireguard-or-private", "address": validate_private_ip(args.address)}
         print(json.dumps(result) if args.json else result["address"])
         return 0
 
-    found = detect_all()
+    found = detect_headscale_client()
     if args.json:
-        print(json.dumps({"detected": found}, indent=2))
+        print(json.dumps({"detected": [found] if found else []}, indent=2))
     elif found:
-        for item in found:
-            print(f"{item['provider']}: {item['address']}  ({item['command']})")
-        print(f"\nSuggested server install:\n  ./install.sh --role server --bind-address {found[0]['address']}")
+        print(f"{found['provider']}: {found['address']} ({found['command']})")
+        print("WARNING:", found["warning"])
+        print(f"\nServer install after verification:\n  ./install.sh --role server --bind-address {found['address']}")
     else:
-        print("No NetBird or Tailscale/Headscale overlay address detected.")
-        print("For Netmaker/plain WireGuard, supply the assigned private interface IPv4 manually.")
+        print("No Headscale-compatible client address detected.")
+        print("For WireGuard/wg-easy, pass the assigned private interface IPv4 with --address or --bind-address.")
         return 1
     return 0
 
