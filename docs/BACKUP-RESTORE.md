@@ -1,108 +1,145 @@
 # Backup and restore
 
-Hermes configuration, credentials, Hindsight memory and ordinary knowledge files have different backup requirements. Do not treat them as one directory-sync problem.
+Hermes Privacy Stack v2 uses **restic** as the target encrypted backup backend. The migration is intentionally conservative: the current helper backs up Hermes artifacts safely but refuses to copy the live mcp-memory-service SQLite database until a consistency-safe automated procedure is tested.
 
-## 1. Sanitized config backup
+## Threat model
 
-Default mode excludes `.env`, OAuth/auth files, `USER.md`, `MEMORY.md`, sessions and live databases:
+Backups may contain more sensitive information than the repository itself:
+
+- OAuth/API credentials in full Hermes backups,
+- personal context and conversation state,
+- semantic memories,
+- Node-RED credentials/flows,
+- private Forgejo repositories,
+- service configuration and topology.
+
+Treat backup encryption keys/passwords as high-value secrets.
+
+## Sanitized Hermes config
 
 ```bash
 python scripts/backup.py
 ```
 
-It creates a timestamped bundle containing a sanitized config archive and a SHA-256 manifest.
+This produces a local bundle containing only reviewed configuration/personality/skills material. It intentionally excludes `.env`, auth state, `USER.md`, sessions and service databases.
 
-Use this for disaster-recovery scaffolding or reviewing configuration history. It is **not** a complete personal-agent backup.
-
-Restore it only after reviewing overwrite conflicts:
+Restore:
 
 ```bash
 python scripts/restore.py --safe-config /path/to/hermes-config-safe.tar.gz
 ```
 
-Add `--force` only when you intentionally want to replace existing config files.
+Existing files are not overwritten unless `--force` is explicit.
 
-## 2. Full Hermes backup
-
-Hermes' native backup is WAL-safe and includes credentials/authentication state. The stack delegates to it instead of copying SQLite files itself:
+## Full Hermes backup
 
 ```bash
 python scripts/backup.py --mode full
 ```
 
-**Full backups contain secrets. Encrypt them before cloud upload.**
+This delegates to Hermes' native backup mechanism and may include OAuth/API credentials. Do not store the resulting ZIP unencrypted.
 
-Restore through Hermes:
+Restore:
 
 ```bash
 python scripts/restore.py --hermes-full /path/to/hermes-full.zip
 ```
 
-Stop long-running gateways before major restores when practical and review Hermes' restore warnings before overwriting newer sessions.
+## restic
 
-## 3. Hindsight memory banks
+Configure restic using its normal environment or password-file/command mechanism. The stack backup helper deliberately does not accept repository passwords on the CLI.
 
-Never copy the live `.pg0`/PostgreSQL volume to Google Drive or Syncthing.
-
-Export one or more logical banks from the managed container:
+Example environment:
 
 ```bash
-python scripts/backup.py \
-  --bank hermes-default \
-  --bank hermes-coder
+export RESTIC_REPOSITORY=/mnt/backup/restic-hermes
+export RESTIC_PASSWORD_FILE="$HOME/.config/restic/hermes-password"
 ```
 
-To include operational audit/LLM history:
+Initialize once:
 
 ```bash
-python scripts/backup.py --bank hermes-default --include-history
+restic init
 ```
 
-Restore/import:
+Create and snapshot a sanitized bundle:
 
 ```bash
-python scripts/restore.py \
-  --hindsight-bank /path/to/hindsight-hermes-default.zip
+python scripts/backup.py --restic
 ```
 
-Or import under a different bank id for a restore drill:
+Full Hermes backup into restic:
 
 ```bash
-python scripts/restore.py \
-  --hindsight-bank /path/to/hindsight-hermes-default.zip \
-  --target-bank restore-test-2026
+python scripts/backup.py --mode full --restic
 ```
 
-Hindsight whole-bank exports omit embeddings; the target regenerates them during import. A target bank must not already exist.
+restic tags these snapshots with:
 
-## 4. Encrypted cloud copy with rclone crypt
+```text
+hermes-privacy-stack
+strict-free-v2
+```
 
-Google Drive, OneDrive and similar free storage can be useful as **object transport**, not as trusted plaintext memory storage.
+The repository may be local storage, NAS mount, SFTP or another restic-supported backend. No particular cloud provider is required.
 
-Create an `rclone crypt` remote interactively with `rclone config`, backed by your chosen cloud remote. After you have verified that the destination really is a crypt remote:
+## Shared semantic memory — current limitation
+
+Do **not** run:
 
 ```bash
-python scripts/backup.py \
-  --mode full \
-  --bank hermes-default \
-  --rclone-dest drivecrypt:hermes-backups \
-  --confirm-rclone-crypt
+cp sqlite_vec.db ...
 ```
 
-The confirmation flag is intentional: the tool will not guess whether an arbitrary rclone destination encrypts filenames/content.
+against a live memory service and assume the copy is consistent.
 
-## 5. Ordinary knowledge files
+`backup.py --include-memory` currently refuses to run on purpose.
 
-Obsidian Markdown, exported documents and other ordinary non-database files may use Syncthing or encrypted cloud sync. Do not include OAuth tokens, browser cookie stores, `.env` files or service databases in those sync roots.
+mcp-memory-service includes SQLite-oriented backup/export tooling upstream, and v2 will automate a tested service-safe path. Until that lands, perform memory backups only using the memory project's documented procedure or a deliberate stopped-service/cold-backup process that you have restore-tested.
 
-## Restore testing
+The same rule applies on restore: `restore.py --memory-database` intentionally refuses to replace a live database.
 
-A backup that has never been restored is unverified. Periodically:
+## Future automated memory procedure
 
-1. export a Hindsight bank,
-2. import it into a temporary bank/instance,
-3. run several known recall queries,
-4. compare expected facts and relationships,
-5. delete the temporary bank after validation.
+The acceptance path is:
 
-Keep at least one backup independent of the primary machine and one copy outside the primary physical location.
+```text
+quiesce / service-safe SQLite backup
+               ↓
+verify backup integrity
+               ↓
+include in staging bundle
+               ↓
+restic snapshot
+               ↓
+restore into disposable instance
+               ↓
+known-memory search succeeds
+```
+
+Only then will memory backup be marked release-ready.
+
+## Node-RED
+
+Until the dedicated logical/cold-consistent helper lands, treat `/data` as service state rather than ordinary Syncthing content. Back it up only in a controlled snapshot/stop window or through a documented Node-RED export plus encrypted restic snapshot.
+
+## Forgejo
+
+Forgejo requires both repository data and its database/config to recover completely. Do not rely on copying only Git repositories if you need issues, users, keys, settings and metadata. A dedicated Forgejo backup path is tracked in the roadmap.
+
+## Syncthing is not a backup database transport
+
+Syncthing is appropriate for normal files such as:
+
+- Obsidian vaults,
+- documents,
+- exported research notes,
+- non-secret static config copies.
+
+It is **not** the transport for live SQLite databases, auth/session directories or active service state.
+
+## Recovery rule
+
+A backup is not trusted until it has been restored and checked.
+
+Keep at least one independent copy and schedule periodic recovery drills rather than relying only on snapshot success messages.
