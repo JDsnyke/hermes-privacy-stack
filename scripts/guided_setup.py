@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Interactive post-bootstrap setup for profiles, SOUL, integrations and persistence approvals.
+"""Interactive post-bootstrap setup for profiles, SOUL and persistence approvals.
 
-Runs only after the core bootstrap succeeds. It never asks for credentials or personal
-facts. Answers are behavioral/security choices and local profile selections.
+The strict-free v2 wizard never asks for credentials or enables commercial/open-core
+integration services. Model choice is handled by bootstrap.py; ChatGPT/Codex OAuth
+remains an optional Hermes-native path.
 """
 from __future__ import annotations
 
@@ -57,24 +58,17 @@ def configure_write_gates() -> None:
     set_config("skills.write_approval", "true")
     set_config("skills.guard_agent_created", "true")
     print("✓ Enabled approval gates for Hermes memory/skill writes and agent-created skill scanning.")
-    print("  Review staged writes with /memory pending and /skills pending in supported surfaces.")
 
 
 def install_profiles(preset: str, role: str) -> None:
-    if role == "server":
-        default_profiles = False
-    else:
-        default_profiles = preset in {"balanced", "developer"}
+    default_profiles = role != "server" and preset in {"balanced", "developer"}
     if not yesno("Create isolated starter profiles (private-personal, coder, researcher)?", default_profiles):
         return
-
-    lean_default = preset == "strict"
-    lean = yesno("Create those profiles in lean mode (no full bundled-skill seed)?", lean_default)
+    lean = yesno("Create profiles in lean mode (smaller skill surface)?", preset == "strict")
     cmd = [sys.executable, str(ROOT / "scripts" / "install_profiles.py"), "private-personal", "coder", "researcher"]
     if lean:
         cmd.append("--lean")
     run(cmd, check=False)
-
     if yesno("Also create the high-authority operator profile?", False):
         cmd = [sys.executable, str(ROOT / "scripts" / "install_profiles.py"), "operator"]
         if lean:
@@ -83,33 +77,21 @@ def install_profiles(preset: str, role: str) -> None:
 
 
 def customize_default_soul() -> None:
-    if not yesno("Customize the default Hermes personality/SOUL now?", False):
-        return
-    print("The builder asks only behavioral preferences and previews a diff before writing.")
-    run([sys.executable, str(ROOT / "scripts" / "build_personality.py"), "--profile", "default", "--apply"], check=False)
-
-
-def setup_nango(preset: str, role: str) -> None:
-    if role == "client":
-        return
-    if not yesno("Enable optional Nango Free Self-Hosted for OAuth/API credential management and proxying?", False):
-        return
-    print("Nango Free Self-Hosted is used here for Auth + Proxy only.")
-    print("Functions, webhooks, managed MCP and the full runtime are not assumed in the free self-host profile.")
-    run([sys.executable, str(ROOT / "scripts" / "setup_nango.py")], check=False)
+    if yesno("Customize the default Hermes personality/SOUL now?", False):
+        run([sys.executable, str(ROOT / "scripts" / "build_personality.py"), "--profile", "default", "--apply"], check=False)
 
 
 def mark_complete(state: dict) -> None:
     root = state_home()
     root.mkdir(parents=True, exist_ok=True)
     path = root / "guided.json"
-    payload = {
-        "schema": 2,
+    path.write_text(json.dumps({
+        "schema": 3,
         "completed": True,
+        "architecture": "strict-free-v2",
         "preset": state.get("preset"),
         "role": state.get("role"),
-    }
-    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    }, indent=2) + "\n", encoding="utf-8")
     if not IS_WINDOWS:
         try:
             os.chmod(root, 0o700)
@@ -129,42 +111,31 @@ def already_complete() -> bool:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Interactive privacy/profile hardening after core bootstrap")
-    parser.add_argument("--force", action="store_true", help="Run again even if guided setup was previously completed")
+    parser = argparse.ArgumentParser(description="Interactive strict-free profile/privacy hardening")
+    parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
-
     if not shutil.which("hermes"):
-        print("Hermes CLI not found; skipping guided profile/privacy setup.")
+        print("Hermes CLI not found; skipping guided setup.")
         return 0
-
     if already_complete() and not args.force:
-        print("Guided setup was already completed. Run `python scripts/guided_setup.py --force` to revisit it.")
+        print("Guided setup already completed. Use --force to revisit it.")
         return 0
 
     state = load_install_state()
     preset = str(state.get("preset") or "balanced")
     role = str(state.get("role") or "local")
-
-    print("\nHermes Privacy Stack — guided profile, integration & persistence setup")
-    print("No credentials or personal profile facts are requested here.\n")
-
+    print("\nHermes Privacy Stack v2 — profiles & persistence")
+    print("The stack excludes paid-feature/open-core integration platforms by policy.\n")
     install_profiles(preset, role)
     customize_default_soul()
-    setup_nango(preset, role)
-
-    gate_default = preset in {"strict", "balanced"}
-    if yesno("Require approval before Hermes persists agent-created memory/skill writes?", gate_default):
+    if yesno("Require approval before Hermes persists agent-created memory/skill writes?", preset in {"strict", "balanced"}):
         configure_write_gates()
-    else:
-        print("ℹ Persistence approval gates left unchanged.")
-
     if yesno("Run Hermes configuration validation now?", True):
         run(["hermes", "config", "check"], check=False)
-
     mark_complete(state)
     print("\n✓ Guided setup complete.")
+    print("Optional ChatGPT/Codex OAuth can be selected anytime with: hermes model")
     print("Review skills with: python scripts/review_skill.py --browse-official")
-    print("Revisit these choices with: python scripts/guided_setup.py --force")
     return 0
 
 
