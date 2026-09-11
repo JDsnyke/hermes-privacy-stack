@@ -1,17 +1,8 @@
 #!/usr/bin/env python3
-"""Resolve Hermes Privacy Stack container sources to immutable OCI digests.
+"""Resolve strict-free v2 Compose images to immutable OCI digests.
 
-This tool is intended for release/manual supply-chain validation. It never changes the
-running stack. It pulls the configured source tags, verifies the Compose image set has
-not drifted from this audited list, and emits:
-
-- images.lock.env   HPS_*_IMAGE variables using repo@sha256 references
-- images.lock.json  provenance-friendly metadata for every resolved image
-- SHA256SUMS        hashes of both lock files
-
-Runtime secrets and personal state are never read. Compose-only secret placeholders are
-injected in-memory when enumerating optional profiles so release evidence generation
-does not require or disclose live Nango credentials.
+The explicit source list is also a policy gate: Compose cannot gain an unreviewed image
+without this tool failing. Runtime secrets/personal state are never read.
 """
 from __future__ import annotations
 
@@ -29,44 +20,29 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 COMPOSE = ROOT / "stack" / "compose.yml"
 
-# Keep this list explicit. If Compose gains an image, normal resolution must fail
-# until the new image and its trust implications are reviewed here.
 SOURCES: dict[str, str] = {
-    "HPS_OLLAMA_IMAGE": "ollama/ollama:latest",
-    "HPS_CURL_IMAGE": "curlimages/curl:latest",
-    "HPS_HINDSIGHT_IMAGE": "ghcr.io/vectorize-io/hindsight:latest",
+    "HPS_MEMORY_IMAGE": "ghcr.io/doobidoo/mcp-memory-service:latest",
     "HPS_SEARXNG_IMAGE": "searxng/searxng:latest",
     "HPS_DOCLING_IMAGE": "quay.io/docling-project/docling-serve:latest",
-    "HPS_ACTIVEPIECES_IMAGE": "activepieces/activepieces:latest",
-    "HPS_NANGO_POSTGRES_IMAGE": "postgres:16.0-alpine",
-    "HPS_NANGO_IMAGE": "nangohq/nango-server:hosted",
+    "HPS_LLAMA_IMAGE": "ghcr.io/ggml-org/llama.cpp:server",
+    "HPS_CRAWL4AI_IMAGE": "unclecode/crawl4ai:0.8.6",
+    "HPS_NODERED_IMAGE": "nodered/node-red:4.1.10",
+    "HPS_FORGEJO_IMAGE": "codeberg.org/forgejo/forgejo:15.0.8",
 }
 
 DIGEST_RE = re.compile(r"^.+@sha256:[0-9a-f]{64}$")
 
 
-def run(
-    cmd: list[str],
-    *,
-    capture: bool = False,
-    env: dict[str, str] | None = None,
-) -> subprocess.CompletedProcess[str]:
+def run(cmd: list[str], *, capture: bool = False, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     print("+", " ".join(cmd))
-    return subprocess.run(
-        cmd,
-        check=True,
-        text=True,
-        capture_output=capture,
-        env=env,
-    )
+    return subprocess.run(cmd, check=True, text=True, capture_output=capture, env=env)
 
 
-def source_ref(env_name: str, default: str) -> str:
-    return os.environ.get(env_name, default).strip()
+def source_ref(name: str, default: str) -> str:
+    return os.environ.get(name, default).strip()
 
 
 def repo_name(ref: str) -> str:
-    """Strip a tag/digest without confusing registry host ports with tags."""
     if "@" in ref:
         return ref.split("@", 1)[0]
     slash = ref.rfind("/")
@@ -76,35 +52,16 @@ def repo_name(ref: str) -> str:
 
 def compose_images() -> set[str]:
     if not shutil.which("docker"):
-        raise SystemExit("docker is required")
-
-    # The Nango Compose profile correctly requires runtime secrets before it can be
-    # started. Image enumeration needs only the service image references, however, so
-    # supply-chain tooling injects non-sensitive one-process placeholders rather than
-    # reading the user's private stack.env.
-    compose_env = os.environ.copy()
-    compose_env.setdefault("HPS_NANGO_ENCRYPTION_KEY", "image-lock-not-a-runtime-secret")
-    compose_env.setdefault("HPS_NANGO_DB_PASSWORD", "image-lock-not-a-runtime-secret")
-    compose_env.setdefault("HPS_NANGO_DASHBOARD_PASSWORD", "image-lock-not-a-runtime-secret")
-
-    proc = run(
-        [
-            "docker",
-            "compose",
-            "-f",
-            str(COMPOSE),
-            "--profile",
-            "core",
-            "--profile",
-            "automation",
-            "--profile",
-            "nango",
-            "config",
-            "--images",
-        ],
-        capture=True,
-        env=compose_env,
-    )
+        raise SystemExit("docker is required for release image resolution")
+    env = os.environ.copy()
+    env.setdefault("HPS_MEMORY_API_KEY", "image-lock-not-a-runtime-secret")
+    env.setdefault("HPS_NODERED_CREDENTIAL_SECRET", "image-lock-not-a-runtime-secret")
+    env.setdefault("HPS_LLAMA_MODEL_DIR", str(ROOT))
+    env.setdefault("HPS_LLAMA_MODEL_FILE", "image-lock-placeholder.gguf")
+    cmd = ["docker", "compose", "-f", str(COMPOSE)]
+    for profile in ("core", "local-model", "research", "automation", "git"):
+        cmd += ["--profile", profile]
+    proc = run(cmd + ["config", "--images"], capture=True, env=env)
     return {line.strip() for line in proc.stdout.splitlines() if line.strip()}
 
 
@@ -119,7 +76,7 @@ def validate_compose_coverage() -> dict[str, str]:
     if actual != expected:
         missing = sorted(actual - expected)
         stale = sorted(expected - actual)
-        details: list[str] = []
+        details = []
         if missing:
             details.append("unreviewed Compose images: " + ", ".join(missing))
         if stale:
@@ -138,11 +95,9 @@ def resolve_digest(source: str, pull: bool) -> dict[str, Any]:
     info = payload[0]
     digests = info.get("RepoDigests") or []
     repo = repo_name(source)
-    pinned = next((d for d in digests if d.startswith(repo + "@sha256:")), None)
-    if pinned is None and digests:
-        pinned = digests[0]
+    pinned = next((d for d in digests if d.startswith(repo + "@sha256:")), None) or (digests[0] if digests else None)
     if not pinned or not DIGEST_RE.match(pinned):
-        raise SystemExit(f"could not obtain immutable sha256 RepoDigest for {source}: {digests}")
+        raise SystemExit(f"could not obtain immutable digest for {source}: {digests}")
     return {
         "source": source,
         "digest_ref": pinned,
@@ -165,64 +120,51 @@ def write_outputs(output_dir: Path, entries: dict[str, dict[str, Any]]) -> None:
     env_path = output_dir / "images.lock.env"
     json_path = output_dir / "images.lock.json"
     sums_path = output_dir / "SHA256SUMS"
-
-    env_text = "# Generated by scripts/image_lock.py; use only after reviewing scan results.\n"
-    env_text += "\n".join(f"{name}={entries[name]['digest_ref']}" for name in sorted(entries)) + "\n"
-    env_path.write_text(env_text, encoding="utf-8")
-
-    manifest = {
-        "schema": 1,
+    env_path.write_text(
+        "# Generated by scripts/image_lock.py after strict-free review.\n" +
+        "\n".join(f"{name}={entries[name]['digest_ref']}" for name in sorted(entries)) + "\n",
+        encoding="utf-8",
+    )
+    json_path.write_text(json.dumps({
+        "schema": 2,
+        "architecture": "strict-free-v2",
         "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
         "repository": os.environ.get("GITHUB_REPOSITORY", "JDsnyke/hermes-privacy-stack"),
         "git_sha": os.environ.get("GITHUB_SHA"),
         "images": entries,
-    }
-    json_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-
-    sums = [
-        f"{sha256_file(env_path)}  {env_path.name}",
-        f"{sha256_file(json_path)}  {json_path.name}",
-    ]
-    sums_path.write_text("\n".join(sums) + "\n", encoding="utf-8")
-
-    print(f"✓ wrote {env_path}")
-    print(f"✓ wrote {json_path}")
-    print(f"✓ wrote {sums_path}")
+    }, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    sums_path.write_text(
+        f"{sha256_file(env_path)}  {env_path.name}\n{sha256_file(json_path)}  {json_path.name}\n",
+        encoding="utf-8",
+    )
 
 
 def self_test() -> None:
     tests = {
         "ubuntu:latest": "ubuntu",
-        "ghcr.io/acme/tool:v1.2.3": "ghcr.io/acme/tool",
+        "ghcr.io/acme/tool:v1": "ghcr.io/acme/tool",
         "registry.example:5000/acme/tool:edge": "registry.example:5000/acme/tool",
         "example/tool@sha256:" + "a" * 64: "example/tool",
     }
     for ref, expected in tests.items():
-        actual = repo_name(ref)
-        if actual != expected:
-            raise SystemExit(f"repo_name({ref!r})={actual!r}, expected {expected!r}")
-    if not DIGEST_RE.match("example/tool@sha256:" + "a" * 64):
-        raise SystemExit("digest regex self-test failed")
-    print("image-lock pure self-test passed")
+        if repo_name(ref) != expected:
+            raise SystemExit(f"repo parsing failed for {ref}")
+    if any(term in " ".join(SOURCES.values()).lower() for term in ("nango", "activepieces", "hindsight", "ollama", "netbird")):
+        raise SystemExit("strict-free source policy regression")
+    print("image-lock strict-free self-test passed")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Resolve Compose images to immutable OCI digests")
+    parser = argparse.ArgumentParser()
     parser.add_argument("--output-dir", default="dist/supply-chain")
-    parser.add_argument("--no-pull", action="store_true", help="Resolve from already-present local images only")
-    parser.add_argument("--self-test", action="store_true", help="Run pure parser checks without Docker")
+    parser.add_argument("--no-pull", action="store_true")
+    parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
-
     if args.self_test:
         self_test()
         return 0
-
     configured = validate_compose_coverage()
-    entries: dict[str, dict[str, Any]] = {}
-    for env_name, source in configured.items():
-        print(f"\nResolving {env_name}: {source}")
-        entries[env_name] = resolve_digest(source, pull=not args.no_pull)
-
+    entries = {name: resolve_digest(source, pull=not args.no_pull) for name, source in configured.items()}
     write_outputs(Path(args.output_dir), entries)
     return 0
 
